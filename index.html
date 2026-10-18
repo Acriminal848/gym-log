@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f1115">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Gym Log">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <title>Gym Log</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="update-banner" hidden></div>
+  <main id="view" aria-live="polite">
+    <p class="loading">กำลังเปิดแอป…</p>
+  </main>
+  <nav id="tabs" aria-label="เมนูหลัก">
+    <button type="button" data-action="tab" data-tab="workout">Workout</button>
+    <button type="button" data-action="tab" data-tab="plans">Plans</button>
+    <button type="button" data-action="tab" data-tab="exercises">Exercises</button>
+    <button type="button" data-action="tab" data-tab="backup">สำรอง</button>
+  </nav>
+  <div id="sheet-root"></div>
+  <div id="toast" role="status" aria-live="polite" hidden></div>
+  <input type="file" id="import-file" accept="application/json,.json" hidden>
+  <noscript><p style="padding:16px">แอปนี้ต้องเปิด JavaScript</p></noscript>
+
+  <script src="storage.js"></script>
+  <script src="progression.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
