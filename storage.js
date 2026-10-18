@@ -95,6 +95,19 @@
   function del(store, key) {
     return run([store], 'readwrite', function (tx) { tx.objectStore(store).delete(key); });
   }
+  // เขียนหลายรายการใน transaction เดียว (สำเร็จทั้งหมดหรือไม่เปลี่ยนเลย)
+  // ops: [{ store, put: record } | { store, del: key }]
+  function batch(ops) {
+    const names = [];
+    ops.forEach(function (o) { if (names.indexOf(o.store) < 0) names.push(o.store); });
+    if (!names.length) return Promise.resolve();
+    return run(names, 'readwrite', function (tx) {
+      ops.forEach(function (o) {
+        const st = tx.objectStore(o.store);
+        if ('put' in o) st.put(o.put); else st.delete(o.del);
+      });
+    });
+  }
 
   async function getSettings() {
     const rows = await getAll('settings');
@@ -106,66 +119,11 @@
     return put('settings', { key: key, value: value });
   }
 
-  /* ---------- ข้อมูลตัวอย่าง (ท่า/แผนเท่านั้น ไม่มีประวัติสมมติ) ---------- */
+  /* ---------- เริ่มต้น ---------- */
 
-  function seedData() {
-    const now = new Date().toISOString();
-    function ex(id, name, muscle, equipment, repMin, repMax, step, weightMode, subs) {
-      return {
-        id: id, name: name, muscle: muscle, equipment: equipment,
-        repMin: repMin, repMax: repMax, step: step, weightMode: weightMode,
-        subs: subs || [], archived: false, isSample: true, createdAt: now
-      };
-    }
-    const exercises = [
-      ex('seed-bench-press', 'Barbell Bench Press', 'อก', 'บาร์เบล', 6, 10, 2.5, 'barbell_total',
-        ['seed-incline-db-press', 'seed-chest-press-machine']),
-      ex('seed-incline-db-press', 'Incline Dumbbell Press', 'อก', 'ดัมเบล', 8, 12, 2, 'dumbbell_each',
-        ['seed-chest-press-machine']),
-      ex('seed-chest-press-machine', 'Chest Press Machine', 'อก', 'เครื่อง Chest Press', 10, 15, 5, 'machine',
-        ['seed-incline-db-press']),
-      ex('seed-shoulder-press', 'Dumbbell Shoulder Press', 'ไหล่', 'ดัมเบล', 8, 12, 2, 'dumbbell_each', []),
-      ex('seed-triceps-pushdown', 'Triceps Pushdown', 'ไตรเซ็ป', 'สายเคเบิล', 10, 15, 2.5, 'cable', []),
-      ex('seed-lat-pulldown', 'Lat Pulldown', 'หลัง', 'เครื่อง Lat Pulldown', 8, 12, 5, 'machine',
-        ['seed-seated-row']),
-      ex('seed-seated-row', 'Seated Cable Row', 'หลัง', 'สายเคเบิล', 8, 12, 5, 'cable',
-        ['seed-lat-pulldown']),
-      ex('seed-db-curl', 'Dumbbell Curl', 'ไบเซ็ป', 'ดัมเบล', 8, 12, 2, 'dumbbell_each', [])
-    ];
-    const plans = [
-      {
-        id: 'seed-plan-push', name: 'Push (ตัวอย่าง)', archived: false, isSample: true, createdAt: now,
-        items: [
-          { exerciseId: 'seed-bench-press', sets: 3 },
-          { exerciseId: 'seed-incline-db-press', sets: 3 },
-          { exerciseId: 'seed-shoulder-press', sets: 3 },
-          { exerciseId: 'seed-triceps-pushdown', sets: 3 }
-        ]
-      },
-      {
-        id: 'seed-plan-pull', name: 'Pull (ตัวอย่าง)', archived: false, isSample: true, createdAt: now,
-        items: [
-          { exerciseId: 'seed-lat-pulldown', sets: 3 },
-          { exerciseId: 'seed-seated-row', sets: 3 },
-          { exerciseId: 'seed-db-curl', sets: 3 }
-        ]
-      }
-    ];
-    return { exercises: exercises, plans: plans };
-  }
-
+  // เปิดฐานข้อมูลและอ่านการตั้งค่า (โปรแกรมฝึกติดตั้งโดย program.js ผ่าน app.js — ไม่มีข้อมูลสมมติของการฝึกอยู่ในซอร์ส)
   async function init() {
     await openDb();
-    const s = await getSettings();
-    const seed = seedData();
-    if (!s.seeded) {
-      await run(['exercises', 'plans', 'settings'], 'readwrite', function (tx) {
-        seed.exercises.forEach(function (e) { tx.objectStore('exercises').put(e); });
-        seed.plans.forEach(function (p) { tx.objectStore('plans').put(p); });
-        tx.objectStore('settings').put({ key: 'seeded', value: true });
-        tx.objectStore('settings').put({ key: 'unit', value: 'kg' });
-      });
-    }
     await setSetting('schemaVersion', SCHEMA_VERSION);
     return getSettings();
   }
@@ -246,14 +204,18 @@
       let repMax = Number.isInteger(e.repMax) ? e.repMax : 12;
       if (repMin < 1 || repMax > 200 || repMin > repMax) { repMin = 8; repMax = 12; warnings.push(tag + ': ช่วง reps ผิดปกติ ใช้ค่าเริ่มต้น 8–12'); }
       const step = finiteNum(e.step) && e.step > 0 && e.step <= 500 ? e.step : 2.5;
-      exercises.push({
+      const exRec = {
         id: e.id, name: name, muscle: str(e.muscle, 60), equipment: str(e.equipment, 80),
         repMin: repMin, repMax: repMax, step: step,
         weightMode: WEIGHT_MODES.indexOf(e.weightMode) >= 0 ? e.weightMode : 'machine',
         subs: Array.isArray(e.subs) ? e.subs.filter(function (x) { return typeof x === 'string'; }).slice(0, 50) : [],
         archived: !!e.archived, isSample: !!e.isSample,
         createdAt: str(e.createdAt, 40) || null
-      });
+      };
+      // ฟิลด์เสริม (เวอร์ชัน 1.3+): ใส่เฉพาะเมื่อมีค่า เพื่อให้ข้อมูลเก่า export/import แล้วเหมือนเดิมทุกไบต์
+      if (typeof e.icon === 'string' && e.icon) exRec.icon = str(e.icon, 40);
+      if (typeof e.note === 'string' && e.note) exRec.note = str(e.note, 300);
+      exercises.push(exRec);
     });
 
     d.plans.forEach(function (p, i) {
@@ -271,7 +233,10 @@
         if (!seenEx[it.exerciseId]) warnings.push(tag + ' อ้างถึงท่าที่ไม่มีในไฟล์ (' + it.exerciseId + ')');
         items.push({ exerciseId: it.exerciseId, sets: sets });
       });
-      plans.push({ id: p.id, name: name, items: items, archived: !!p.archived, isSample: !!p.isSample, createdAt: str(p.createdAt, 40) || null });
+      const planRec = { id: p.id, name: name, items: items, archived: !!p.archived, isSample: !!p.isSample, createdAt: str(p.createdAt, 40) || null };
+      if (typeof p.focus === 'string' && p.focus) planRec.focus = str(p.focus, 120);
+      if (typeof p.note === 'string' && p.note) planRec.note = str(p.note, 300);
+      plans.push(planRec);
     });
 
     d.workouts.forEach(function (w, i) {
@@ -309,8 +274,9 @@
           target = {
             weight: finiteNum(en.target.weight),
             reps: Number.isInteger(en.target.reps) ? en.target.reps : null,
-            reason: str(en.target.reason, 300)
+            reason: str(en.target.reason, 400)
           };
+          if (typeof en.target.kind === 'string' && en.target.kind) target.kind = str(en.target.kind, 30);   // เก็บเฉพาะเมื่อมี (ไม่เติมค่าใหม่ให้ข้อมูลเก่า)
         }
         return {
           id: en.id,
@@ -379,6 +345,7 @@
       });
       tx.objectStore('settings').put({ key: 'unit', value: clean.settings.unit });
       tx.objectStore('settings').put({ key: 'seeded', value: true });
+      tx.objectStore('settings').put({ key: 'program', value: 'restored' });   // กู้คืนแล้วไม่เติมโปรแกรมให้อีก
     });
   }
 
@@ -414,13 +381,12 @@
     WEIGHT_MODES: WEIGHT_MODES,
     uid: uid,
     init: init,
-    getAll: getAll, get: get, put: put, del: del,
+    getAll: getAll, get: get, put: put, del: del, batch: batch,
     getSettings: getSettings, setSetting: setSetting,
     exportAll: exportAll,
     validateBackup: validateBackup,
     importReplace: importReplace,
-    importMerge: importMerge,
-    seedData: seedData
+    importMerge: importMerge
   };
   global.GymStorage = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
