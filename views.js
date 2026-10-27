@@ -31,6 +31,83 @@
     }).join('');
   };
 
+
+  /* ---------- 1.5: ส่วนประกอบของหน้าแรก ---------- */
+  function shortPlan(name) { return String(name || '').replace(/^\s*PPL\s*[·\-:]\s*/i, ''); }
+  const DOW = ['จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส', 'อา'];
+  const DOW_FULL = ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์', 'อาทิตย์'];
+
+  function rotationInfo() {
+    const rot = SM.rotationPlans(GL.sortedPlans());
+    return { rot: rot, next: SM.nextInRotation(rot, GL.finishedWorkouts()) };
+  }
+
+  function todayCard() {
+    const info = rotationInfo();
+    if (!info.next) {
+      return '<section class="today-card"><div class="tc-kicker">วันนี้</div><div class="tc-title">ยังไม่มีแผนให้เริ่ม</div>' +
+        '<div class="btn-row"><button type="button" class="btn primary" data-action="plan-new-go">สร้างแผนแรก</button></div></section>';
+    }
+    const p = info.next.plan, after = info.next.after;
+    const exs = p.items.map(function (it) { return { ex: GL.exById(it.exerciseId), sets: it.sets }; }).filter(function (x) { return x.ex && !x.ex.archived; });
+    const total = exs.reduce(function (n, x) { return n + x.sets; }, 0);
+    const today = GL.localDateKey();
+    const doneToday = GL.finishedWorkouts().some(function (w) { return w.date === today && GL.sessionSetCount(w) > 0; });
+    let meta = exs.length + ' ท่า · ' + total + ' เซต';
+    if (after) meta += ' · ครั้งก่อน ' + shortPlan(after.planName) + ' ' + GL.agoLabel(after.date);
+    return '<section class="today-card' + (doneToday ? ' done' : '') + '" aria-label="แผนถัดไป">' +
+      '<div class="tc-kicker">' + (doneToday ? ico('check', 18) + 'วันนี้จดไปแล้ว · ถัดไป' : 'วันนี้ · แผนถัดไป') + '</div>' +
+      '<div class="tc-title">' + esc(p.name) + '</div>' +
+      (p.focus ? '<div class="tc-sub">' + esc(p.focus) + '</div>' : '') +
+      '<div class="tc-meta">' + esc(meta) + '</div>' +
+      '<div class="pc-icons">' + exs.slice(0, 7).map(function (x) { return exTile(x.ex, 'sm'); }).join('') + '</div>' +
+      '<div class="btn-row"><button type="button" class="btn' + (doneToday ? '' : ' primary') + '" data-action="start-plan" data-plan="' + esc(p.id) + '">เริ่ม ' + esc(shortPlan(p.name)) + '</button>' +
+      '<button type="button" class="btn" data-action="plan-view" data-plan="' + esc(p.id) + '">ดูแผน</button></div></section>';
+  }
+
+  function weekCard() {
+    const info = rotationInfo();
+    const strip = SM.weekStrip(state.workouts, GL.localDateKey());
+    const goal = Math.max(info.rot.length, 1);
+    let h = '<section class="card week-card" aria-label="สัปดาห์นี้"><div class="wk-head"><h3>สัปดาห์นี้</h3><span class="wk-count"><b>' + strip.sessions + '</b>/' + goal + ' ครั้ง</span></div><div class="wk-strip" role="list">';
+    strip.days.forEach(function (d, i) {
+      const done = d.sessions.length > 0;
+      const names = d.sessions.map(function (x) { return shortPlan(x.planName); }).join(', ');
+      const label = DOW_FULL[i] + ' ' + GL.fmtShort(d.key) + ': ' + (done ? 'จดแล้ว ' + names : (d.isToday ? 'วันนี้ ยังไม่ได้จด' : (d.isFuture ? 'ยังไม่ถึง' : 'ไม่ได้จด')));
+      h += '<div class="wk-day' + (d.isToday ? ' today' : '') + (done ? ' done' : '') + (d.isFuture ? ' future' : '') + '" role="listitem" aria-label="' + esc(label) + '">' +
+        '<span class="wk-dow">' + DOW[i] + '</span><span class="wk-dot">' + (done ? ico('check', 18) : '') + '</span>' +
+        '<span class="wk-name">' + (done ? esc(names.length > 6 ? names.slice(0, 5) + '…' : names) : '&nbsp;') + '</span></div>';
+    });
+    return h + '</div></section>';
+  }
+
+  function freshMusclesCard() {
+    const info = rotationInfo();
+    const strip = SM.weekStrip(state.workouts, GL.localDateKey());
+    if (!strip.sessions || !info.rot.length) return '';
+    const trained = SM.muscleSets(state.workouts, GL.exById, strip.weekStart);
+    const left = SM.untrainedMuscles(info.rot, GL.exById, trained);
+    if (!left.length) return '<p class="fresh-done">' + ico('check', 18) + 'ครบทุกกล้ามเนื้อในโปรแกรมแล้วสัปดาห์นี้</p>';
+    return '<section class="card fresh-card"><h3>ยังไม่ได้เล่นสัปดาห์นี้</h3><div class="chips wrap">' +
+      left.map(function (m) { return '<span class="tag">' + esc(m) + '</span>'; }).join('') + '</div>' +
+      '<p class="hint">นับเซตตรงตามกล้ามเนื้อหลักของท่า · เป็นแค่ตัวช่วยจำ ไม่ใช่เป้าที่ต้องทำให้ครบ</p></section>';
+  }
+
+  function backupRow() {
+    const lb = state.settings.lastBackupAt;
+    const fin = GL.finishedWorkouts();
+    let days = null, since = 0;
+    if (lb) {
+      days = Math.max(0, Math.round((Date.now() - new Date(lb).getTime()) / 86400000));
+      since = fin.filter(function (w) { return (w.finishedAt || w.date) > lb; }).length;
+    }
+    const nudge = (!lb && fin.length > 0) || (lb && (days > 14 || since >= 5));
+    const text = lb ? 'สำรองล่าสุด ' + esc(GL.fmtShort(GL.localDateKey(new Date(lb)))) + ' (' + (days === 0 ? 'วันนี้' : days + ' วันก่อน') + ')' : 'ยังไม่เคยสำรองข้อมูล';
+    return '<section class="backup-row' + (nudge ? ' nudge' : '') + '"><div class="br-txt"><span>' + text + '</span>' +
+      (nudge ? '<small>' + (lb && since >= 5 ? 'มี ' + since + ' session ใหม่ที่ยังไม่ได้สำรอง' : 'ข้อมูลอยู่ในเครื่องนี้เท่านั้น ควรสำรองไว้') + '</small>' : '') + '</div>' +
+      '<button type="button" class="btn small' + (nudge ? ' primary' : '') + '" data-action="open-backup">' + ico('backup', 20) + 'สำรอง</button></section>';
+  }
+
   /* ---------- หน้าแรก ---------- */
   V.home = function () {
     let h = '<div class="page-title"><h1>Gym Log</h1><button type="button" class="iconbtn quiet" data-action="open-settings" aria-label="ตั้งค่า">' + ico('settings', 24) + '</button></div>' +
@@ -54,7 +131,11 @@
         '<button type="button" class="btn" data-action="manage">จัดการ session</button></div></section>';
     }
 
-    h += '<h2>แผนของฉัน</h2>';
+    if (!state.active) h += todayCard();
+    h += weekCard();
+    h += freshMusclesCard();
+
+    h += '<h2>แผนทั้งหมด</h2>';
     const plans = GL.sortedPlans();
     if (!plans.length) {
       h += '<div class="card"><p class="muted">ยังไม่มีแผน</p><button type="button" class="btn primary" data-action="plan-new-go">สร้างแผนแรก</button></div>';
@@ -63,20 +144,13 @@
       const exs = p.items.map(function (it) { return { ex: GL.exById(it.exerciseId), sets: it.sets }; }).filter(function (x) { return x.ex && !x.ex.archived; });
       const total = exs.reduce(function (n, x) { return n + x.sets; }, 0);
       const last = GL.planLastUsed(p.id);
-      h += '<button type="button" class="list-btn plan-card" data-action="plan-view" data-plan="' + esc(p.id) + '">' +
-        '<div class="pc-top"><div class="lb-main"><div class="t">' + esc(p.name) + '</div>' +
-        (p.focus ? '<div class="s">' + esc(p.focus) + '</div>' : '') + '</div>' + ico('chevron', 22, 'chev') + '</div>' +
-        '<div class="pc-icons">' + exs.slice(0, 7).map(function (x) { return exTile(x.ex, 'sm'); }).join('') + '</div>' +
-        '<div class="s">' + exs.length + ' ท่า · ' + total + ' เซต' + (last ? ' · ล่าสุด ' + esc(GL.fmtShort(last)) : ' · ยังไม่เคยเล่น') + '</div></button>';
+      h += '<button type="button" class="list-btn plan-row" data-action="plan-view" data-plan="' + esc(p.id) + '">' +
+        '<div class="lb-main"><div class="t">' + esc(p.name) + '</div>' +
+        '<div class="s">' + exs.length + ' ท่า · ' + total + ' เซต · ' + (last ? 'ล่าสุด ' + esc(GL.fmtShort(last)) : 'ยังไม่เคยเล่น') + '</div></div>' +
+        ico('chevron', 22, 'chev') + '</button>';
     });
     h += '<button type="button" class="btn ghost" style="margin-top:4px" data-action="start-free">เริ่มจดแบบเลือกท่าเอง (ไม่ใช้แผน)</button>';
-
-    const fin = GL.finishedWorkouts().length;
-    const lb = state.settings.lastBackupAt;
-    h += '<h2>สำรองข้อมูล</h2><section class="card"><div class="kv" style="padding-top:0"><span>สำรองล่าสุด</span><span>' +
-      (lb ? esc(GL.fmtDateTime(lb)) : (fin ? '<span class="tag warn">ยังไม่เคยสำรอง</span>' : 'ยังไม่เคยสำรอง')) + '</span></div>' +
-      '<p class="hint">ข้อมูลอยู่ในเครื่องนี้เท่านั้น ไม่มี cloud สำรองให้อัตโนมัติ</p>' +
-      '<button type="button" class="btn" data-action="open-backup">' + ico('backup', 22) + 'สำรอง / กู้คืนข้อมูล</button></section>';
+    h += backupRow();
     return h;
   };
 
@@ -515,6 +589,7 @@
     }
     h += '<p class="hint">ตอนพัก กด −15 / +15 ที่แถบจับเวลาได้ · ตั้งเวลาพักเฉพาะบางท่าได้ที่แท็บ ท่า → แก้ไขท่า</p>' +
       switchRow('restSound', 'เสียงเตือนเมื่อพักครบ', 'เสียงสั้น ๆ (เครื่องที่ปิดเสียงจะไม่ดัง)') + '</section>';
+    h += '<section class="card"><h3>ประวัติ</h3>' + switchRow('showTargets', 'แสดงเส้นอ้างอิงเซตต่อสัปดาห์', 'ขีดที่ 10 และ 20 เซตต่อกล้ามเนื้อ เป็นแค่เส้นอ้างอิง ไม่ใช่เป้า (ปิดไว้เป็นค่าเริ่มต้น)') + '</section>';
     h += '<section class="card"><h3>หน้าจอ</h3>' + switchRow('keepAwake', 'เปิดจอค้างระหว่างจดเซต', 'กันจอดับตอนพักระหว่างเซต (ใช้แบตเพิ่มเล็กน้อย)') + '</section>';
     h += '<section class="card"><h3>ข้อมูลและแอป</h3><button type="button" class="btn" data-action="open-backup">' + ico('backup', 22) + 'สำรอง / กู้คืนข้อมูล</button>' +
       kv('เวอร์ชันแอป', esc(GL.APP_VERSION)) + '</section>';
@@ -557,8 +632,22 @@
     if (!w) return '<p class="muted">ไม่พบ workout</p><button type="button" class="btn" data-action="home">กลับหน้าแรก</button>';
     const exs = w.entries.filter(function (e) { return P.workingCompleted(e).length; });
     let h = '<h1>จบการฝึกแล้ว</h1><p class="sub">' + esc(w.planName) + ' · ' + esc(GL.fmtDate(w.date, true)) + '</p>';
-    h += '<div class="card"><div class="kv" style="padding-top:0"><span>ท่าที่เล่นจริง</span><span>' + exs.length + ' ท่า</span></div>' +
-      '<div class="kv" style="padding-bottom:0"><span>working sets ที่ทำเสร็จ</span><span>' + GL.sessionWorkingCount(w) + ' เซต</span></div></div>';
+    const dur = SM.durationMin(w);
+    h += '<div class="stat-row done-stats"><div class="stat"><span>ระยะเวลา</span><b>' + (dur ? dur : '—') + '</b><small>' + (dur ? 'นาที' : 'ไม่มีข้อมูลเวลา') + '</small></div>' +
+      '<div class="stat"><span>เซตที่ทำ</span><b>' + GL.sessionWorkingCount(w) + '</b><small>working sets</small></div>' +
+      '<div class="stat"><span>ท่าที่เล่น</span><b>' + exs.length + '</b><small>ท่า</small></div></div>';
+    const prs = SM.sessionPRs(state.workouts, w.id);
+    if (prs.length) {
+      h += '<section class="card pr-card"><h3>สถิติใหม่ ' + prs.length + ' ท่า</h3>' + prs.map(function (x) {
+        return '<div class="pr-line"><span class="tag pr">◆ PR</span><span><b>' + esc(x.name) + '</b> ' + (x.kind === 'weight'
+          ? esc(fmtNum(x.value)) + ' kg <span class="muted small">(เดิม ' + esc(fmtNum(x.prev)) + ')</span>'
+          : '1RM โดยประมาณ ' + esc(fmtNum(x.value)) + ' kg <span class="muted small">(เดิม ' + esc(fmtNum(x.prev)) + ')</span>') + '</span></div>';
+      }).join('') + '</section>';
+    }
+    const mus = SM.sessionMuscles(w, GL.exById);
+    if (mus.length) {
+      h += '<section class="card"><h3>กล้ามเนื้อที่ได้เซตวันนี้</h3><div class="chips wrap">' + mus.map(function (m) { return '<span class="tag">' + esc(m.muscle) + ' · ' + m.sets + ' เซต</span>'; }).join('') + '</div></section>';
+    }
     if (!exs.length) h += '<div class="notice">session นี้มีเฉพาะ warm-up ที่บันทึกไว้ ไม่นับเป็น working set</div>';
     exs.forEach(function (e) {
       const ex = GL.exById(e.exerciseId);
@@ -747,23 +836,33 @@
   }
   function basisText(g) { return (g.equipment || 'ไม่ระบุอุปกรณ์') + ' · นับน้ำหนัก ' + (GL.WEIGHT_MODE_SHORT[g.weightMode] || g.weightMode); }
 
+  const HIS_MODES = [['overview', 'ภาพรวม'], ['exercises', 'รายท่า'], ['sessions', 'รายครั้ง']];
+
+  function historyEmpty(msg) {
+    const info = rotationInfo();
+    return '<div class="card empty"><p class="muted">' + esc(msg) + '</p>' +
+      (info.next ? '<button type="button" class="btn primary" data-action="start-plan" data-plan="' + esc(info.next.plan.id) + '">เริ่มฝึก ' + esc(shortPlan(info.next.plan.name)) + '</button>'
+        : '<button type="button" class="btn primary" data-action="plan-new-go">สร้างแผนแรก</button>') + '</div>';
+  }
+
   V.history = function () {
-    let h = '<h1>ประวัติ</h1><p class="sub">คำนวณจาก workout ที่จบแล้วเท่านั้น · เฉพาะเซต working ที่ทำเสร็จ (warm-up และเซตที่ข้ามไม่นับ)</p>';
-    h += '<div class="seg" role="tablist">' + [['sessions', 'รายครั้ง'], ['exercises', 'รายท่า'], ['weeks', 'รายสัปดาห์']].map(function (m) {
+    let h = '<h1>ประวัติ</h1>';
+    h += '<div class="seg" role="tablist">' + HIS_MODES.map(function (m) {
       return '<button type="button" role="tab" data-action="his-mode" data-mode="' + m[0] + '" class="' + (state.hisMode === m[0] ? 'on' : '') + '" aria-selected="' + (state.hisMode === m[0]) + '">' + m[1] + '</button>';
     }).join('') + '</div>';
-    if (state.hisMode === 'weeks') return h + V.weekly();
+    const fin = GL.finishedWorkouts();
+    if (state.hisMode === 'overview') return h + V.overview();
     if (state.hisMode === 'exercises') {
       const idx = SM.exerciseIndex(state.workouts).sort(function (a, b) { return a.lastDate < b.lastDate ? 1 : -1; });
-      if (!idx.length) return h + '<div class="card muted">ยังไม่มีประวัติ — จบ workout แรกแล้วท่าที่เล่นจะมาอยู่ที่นี่</div>';
+      if (!idx.length) return h + historyEmpty('ยังไม่มีประวัติ — จบ workout แรกแล้วท่าที่เล่นจะมาอยู่ที่นี่ พร้อมกราฟแนวโน้มน้ำหนัก');
+      h += '<p class="hint">แตะท่าเพื่อดูแนวโน้มน้ำหนักและสถิติใหม่ (PR)</p>';
       idx.forEach(function (x) {
         h += '<button type="button" class="list-btn" data-action="sum-open" data-ex="' + esc(x.exerciseId) + '">' + exTile(GL.exById(x.exerciseId), 'sm') +
           '<div class="lb-main"><div class="t">' + esc(x.name) + '</div><div class="s">เล่นแล้ว ' + x.sessions + ' ครั้ง · ล่าสุด ' + esc(GL.fmtDate(x.lastDate, true)) + '</div></div>' + ico('chevron', 20, 'chev') + '</button>';
       });
       return h;
     }
-    const fin = GL.finishedWorkouts();
-    if (!fin.length) return h + '<div class="card muted">ยังไม่มีประวัติ — จะมีเมื่อกด “จบและเก็บผลการฝึก” และมีเซตที่ยืนยันแล้วอย่างน้อย 1 เซต</div>';
+    if (!fin.length) return h + historyEmpty('ยังไม่มีประวัติ — จะมีเมื่อกด “จบและเก็บผลการฝึก” และมีเซตที่ยืนยันแล้วอย่างน้อย 1 เซต');
     fin.slice(0, 80).forEach(function (w) {
       const sets = GL.sessionWorkingCount(w), exs = w.entries.filter(function (e) { return P.workingCompleted(e).length; }).length;
       h += '<button type="button" class="list-btn" data-action="open-detail" data-id="' + esc(w.id) + '"><div class="lb-main"><div class="t">' + esc(w.planName) + '</div>' +
@@ -772,19 +871,56 @@
     return h;
   };
 
-  V.weekly = function () {
-    const weeks = SM.weeklyOverview(state.workouts);
-    if (!weeks.length) return '<div class="card muted">ยังไม่มีประวัติที่จบแล้ว</div>';
-    let h = '<p class="hint">แต่ละสัปดาห์เริ่มวันจันทร์ ตัวเลขแยกเป็นรายท่า (ไม่รวมข้ามท่า ไม่มีคะแนนรวม)</p>';
-    weeks.slice(0, 26).forEach(function (wk) {
-      h += '<section class="card"><h3>' + esc(fmtRange(wk.weekStart, wk.weekEnd)) + '</h3><div class="small muted">' + wk.workouts + ' workout</div>';
-      wk.exercises.forEach(function (x) {
-        h += '<div class="sum-row"><div><b>' + esc(x.name) + '</b><div class="muted tiny">' + esc(basisText(x)) + '</div></div>' +
-          '<div class="sum-nums"><div class="b">' + x.workingSets + ' เซต</div><div class="muted small">' + esc(fmtNum(x.volume)) + ' kg×reps</div>' +
-          '<div class="muted tiny">หนักสุด ' + esc(fmtNum(x.top.weight)) + '×' + x.top.reps + '</div></div></div>';
-      });
-      h += '</section>';
+  /* ---------- ภาพรวม: เซตต่อกล้ามเนื้อรายสัปดาห์ + ตารางความสม่ำเสมอ ---------- */
+  function weekKeyFor(offset) {
+    const d = GL.parseKey(SM.weekStart(GL.localDateKey()));
+    d.setDate(d.getDate() + 7 * offset);
+    return GL.localDateKey(d);
+  }
+
+  V.overview = function () {
+    const fin = GL.finishedWorkouts();
+    if (!fin.length) return historyEmpty('ยังไม่มีประวัติ — จบ workout แรกแล้วภาพรวมรายสัปดาห์และตารางความสม่ำเสมอจะขึ้นที่นี่');
+    const off = Math.max(-104, Math.min(0, state.hisWeek || 0));
+    const ws = weekKeyFor(off), we = SM.weekEnd(ws);
+    const mw = SM.muscleWeek(state.workouts, GL.exById, ws);
+    const info = rotationInfo();
+    const order = [];
+    info.rot.forEach(function (p) { p.items.forEach(function (it) { const ex = GL.exById(it.exerciseId); if (ex && ex.muscle && order.indexOf(ex.muscle) < 0) order.push(ex.muscle); }); });
+    Object.keys(mw).forEach(function (m) { if (order.indexOf(m) < 0) order.push(m); });
+    const targets = GL.setting('showTargets') === true;
+    const maxSets = Math.max.apply(null, [targets ? 24 : 10].concat(order.map(function (m) { return mw[m] ? mw[m].sets : 0; })));
+    const wkSessions = SM.weekStrip(state.workouts, we).sessions;
+
+    let h = '<section class="card ov-card"><div class="ov-nav"><button type="button" class="iconbtn" data-action="his-week" data-d="-1" aria-label="สัปดาห์ก่อนหน้า">' + ico('back', 22) + '</button>' +
+      '<div class="ov-title"><b>' + esc(fmtRange(ws, we)) + '</b><span class="muted small">' + (off === 0 ? 'สัปดาห์นี้' : Math.abs(off) + ' สัปดาห์ก่อน') + ' · ' + wkSessions + ' ครั้ง</span></div>' +
+      '<button type="button" class="iconbtn" data-action="his-week" data-d="1" aria-label="สัปดาห์ถัดไป"' + (off === 0 ? ' disabled' : '') + '>' + ico('chevron', 22) + '</button></div>';
+    h += '<h3>เซตต่อกล้ามเนื้อ</h3>';
+    if (!order.length) h += '<p class="muted">ไม่มีกล้ามเนื้อให้แสดง</p>';
+    order.forEach(function (m) {
+      const x = mw[m] || { sets: 0, sessions: 0 };
+      const pct = Math.min(100, Math.round(x.sets / maxSets * 100));
+      h += '<div class="mb-row"><div class="mb-head"><span class="mb-name">' + esc(m) + '</span><span class="mb-num"><b>' + x.sets + '</b> เซต' + (x.sessions ? ' · ' + x.sessions + ' ครั้ง' : '') + '</span></div>' +
+        '<div class="mb-track" role="img" aria-label="' + esc(m + ' ' + x.sets + ' เซต ' + x.sessions + ' ครั้ง') + '"><i style="width:' + pct + '%"></i>' +
+        (targets ? '<s class="mb-mark" style="left:' + Math.round(10 / maxSets * 100) + '%"></s><s class="mb-mark" style="left:' + Math.round(20 / maxSets * 100) + '%"></s>' : '') + '</div></div>';
     });
+    h += '<p class="hint">นับ <b>เซตตรง</b> = เซต working ที่ทำเสร็จ ตามกล้ามเนื้อหลักของท่านั้น (ไม่นับผลทางอ้อม เช่น อกช่วยไตรเซ็ป · warm-up และเซตที่ข้ามไม่นับ) ' +
+      (targets ? 'เส้นขีดที่ 10 และ 20 เซตเป็นเพียงเส้นอ้างอิงทั่วไป ไม่ใช่เป้าที่ต้องทำให้ถึง' : 'เปิดเส้นอ้างอิงได้ที่ตั้งค่า (ปิดไว้เป็นค่าเริ่มต้น)') + '</p></section>';
+
+    const g = SM.consistencyGrid(state.workouts, GL.localDateKey(), 12);
+    const dayN = ['จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส', 'อา'];
+    h += '<section class="card cg-card"><h3>ความสม่ำเสมอ 12 สัปดาห์</h3><p class="muted small">รวม <b style="color:var(--text)">' + g.total + '</b> ครั้ง · เฉลี่ย ' + g.avg + ' ครั้ง/สัปดาห์ · มีการฝึก ' + g.activeWeeks + ' จาก 12 สัปดาห์</p>' +
+      '<table class="cg"><caption class="sr-only">จำนวน session ที่จดต่อวัน เรียงจากสัปดาห์เก่าไปใหม่ (ซ้ายไปขวา) แถวคือวันจันทร์ถึงอาทิตย์</caption><thead class="sr-only"><tr><th></th>' +
+      g.weeks.map(function (w) { return '<th scope="col">สัปดาห์ ' + esc(GL.fmtShort(w.weekStart)) + '</th>'; }).join('') + '</tr></thead><tbody>';
+    for (let d = 0; d < 7; d++) {
+      h += '<tr><th scope="row">' + dayN[d] + '</th>';
+      g.weeks.forEach(function (w) {
+        const c = w.days[d];
+        h += '<td class="' + (c.count ? 'on' : '') + (c.isFuture ? ' fut' : '') + (c.isToday ? ' tod' : '') + '" aria-label="' + esc(GL.fmtShort(c.key) + ' ' + dayN[d] + ': ' + (c.isFuture ? 'ยังไม่ถึง' : c.count + ' ครั้ง')) + '">' + (c.count ? c.count : '') + '</td>';
+      });
+      h += '</tr>';
+    }
+    h += '</tbody></table><div class="cg-axis"><span>เก่า</span><span>ใหม่</span></div></section>';
     return h;
   };
 
@@ -824,13 +960,27 @@
     h += '<div class="seg"><button type="button" class="' + (state.sumView === 'session' ? 'on' : '') + '" data-action="sum-view" data-v="session">รายครั้ง</button>' +
       '<button type="button" class="' + (state.sumView === 'week' ? 'on' : '') + '" data-action="sum-view" data-v="week">รายสัปดาห์</button></div>';
     if (groups.length > 1) h += '<div class="notice">ท่านี้เคยเล่นด้วยอุปกรณ์/วิธีนับน้ำหนักต่างกัน จึงแยกเป็นกลุ่ม ไม่รวมกัน (น้ำหนักเทียบกันตรง ๆ ไม่ได้)</div>';
+    const metric = state.trendMetric === 'e1rm' ? 'e1rm' : 'top';
     groups.forEach(function (g) {
+      const pts = SM.exerciseTrend(g.sessions, metric);
+      const prByWorkout = {};
+      pts.forEach(function (p) { if (p.pr) prByWorkout[p.workoutId] = true; });
+      const latest = g.sessions[0];
+      let best = g.sessions[0].top;
+      g.sessions.forEach(function (r) { if (r.top.weight > best.weight || (r.top.weight === best.weight && r.top.reps > best.reps)) best = r.top; });
+      const oldest = g.sessions[g.sessions.length - 1];
       h += '<section class="card"><h3>' + esc(g.equipment || 'ไม่ระบุอุปกรณ์') + '</h3><div class="small muted">นับน้ำหนัก: ' + esc(modeLabel(g.weightMode)) + '</div>';
-      const recent = g.sessions.slice(0, 12).slice().reverse();
-      const max = Math.max.apply(null, recent.map(function (r) { return r.volume; })) || 1;
-      if (recent.length > 1) {
-        h += '<div class="muted tiny" style="margin-top:10px">volume load ต่อครั้ง (เก่า → ใหม่, สูงสุด 12 ครั้งล่าสุด)</div><div class="bars" aria-hidden="true">' +
-          recent.map(function (r) { return '<span style="height:' + Math.max(6, Math.round(r.volume / max * 100)) + '%"></span>'; }).join('') + '</div>';
+      h += '<div class="stat-row"><div class="stat"><span>ล่าสุด</span><b>' + esc(fmtNum(latest.top.weight)) + '×' + latest.top.reps + '</b><small>เซตหนักสุด</small></div>' +
+        '<div class="stat"><span>ดีที่สุด</span><b>' + esc(fmtNum(best.weight)) + '×' + best.reps + '</b><small>เซตหนักสุดที่เคยทำ</small></div>' +
+        '<div class="stat"><span>เล่นแล้ว</span><b>' + g.sessions.length + '</b><small>ครั้ง' + (g.sessions.length > 1 ? ' · ' + esc(GL.fmtShort(oldest.date)) + ' →' : '') + '</small></div></div>';
+      if (pts.length >= 4) {
+        h += '<div class="seg metric-seg" role="tablist"><button type="button" role="tab" data-action="trend-metric" data-v="top" aria-selected="' + (metric === 'top') + '" class="' + (metric === 'top' ? 'on' : '') + '">น้ำหนักสูงสุด</button>' +
+          '<button type="button" role="tab" data-action="trend-metric" data-v="e1rm" aria-selected="' + (metric === 'e1rm') + '" class="' + (metric === 'e1rm' ? 'on' : '') + '">1RM โดยประมาณ</button></div>';
+        h += '<div class="chart-wrap">' + window.GymCharts.line(pts, { unit: 'kg', label: metric === 'top' ? 'น้ำหนักเซตหนักสุดต่อครั้ง' : '1RM โดยประมาณต่อครั้ง', fmtDate: GL.fmtShort }) + '</div>';
+        h += '<p class="hint">' + (metric === 'top' ? 'น้ำหนักของเซตที่หนักสุดในแต่ละครั้ง' : '1RM โดยประมาณ (สูตร Epley: น้ำหนัก × (1 + reps/30)) ใช้เทียบแนวโน้มของท่านี้เท่านั้น ไม่แม่นเมื่อ reps สูง') +
+          ' · <b>◆ PR</b> = สถิติใหม่ของท่า+อุปกรณ์นี้ (ครั้งแรกที่เล่นไม่นับ)</p>';
+      } else {
+        h += '<p class="hint">กราฟแนวโน้มจะขึ้นเมื่อเล่นท่านี้ครบ 4 ครั้ง (ตอนนี้ ' + pts.length + ' ครั้ง) — ดูตัวเลขแต่ละครั้งได้ด้านล่าง</p>';
       }
       if (state.sumView === 'week') {
         g.weeks.slice(0, 26).forEach(function (w) {
@@ -840,6 +990,7 @@
       } else {
         g.sessions.slice(0, 60).forEach(function (r) {
           h += '<div class="sum-row"><div><b>' + esc(GL.fmtDate(r.date, true)) + '</b> <span class="muted small">· ' + esc(GL.agoLabel(r.date)) + '</span>' +
+            (prByWorkout[r.workoutId] ? ' <span class="tag pr">◆ PR</span>' : '') +
             '<div class="small">' + esc(setsLine(r.sets)) + '</div></div>' +
             '<div class="sum-nums"><div class="b">' + r.workingSets + ' เซต</div><div class="muted small">' + esc(fmtNum(r.volume)) + ' kg×reps</div></div></div>';
         });

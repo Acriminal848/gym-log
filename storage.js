@@ -132,7 +132,7 @@
 
   // ค่าตั้งค่าที่เขียนลงไฟล์สำรอง: unit เสมอ + คีย์ใหม่ (1.4+) เฉพาะที่ผู้ใช้เคยตั้ง
   // (ข้อมูลเดิมที่ไม่เคยตั้งค่า จึงได้ไฟล์สำรองหน้าตาเหมือนเดิม)
-  const OPT_SETTINGS = ['restSeconds', 'restAuto', 'restSound', 'keepAwake'];
+  const OPT_SETTINGS = ['restSeconds', 'restAuto', 'restSound', 'keepAwake', 'showTargets'];
   function exportSettings(o) {
     const out = { unit: o.unit || 'kg' };
     OPT_SETTINGS.forEach(function (k) { if (o[k] !== undefined) out[k] = o[k]; });
@@ -142,7 +142,7 @@
     const out = { unit: 'kg' };
     if (!isObj(raw)) return out;
     if (Number.isInteger(raw.restSeconds) && raw.restSeconds >= 10 && raw.restSeconds <= 900) out.restSeconds = raw.restSeconds;
-    ['restAuto', 'restSound', 'keepAwake'].forEach(function (k) { if (typeof raw[k] === 'boolean') out[k] = raw[k]; });
+    ['restAuto', 'restSound', 'keepAwake', 'showTargets'].forEach(function (k) { if (typeof raw[k] === 'boolean') out[k] = raw[k]; });
     return out;
   }
 

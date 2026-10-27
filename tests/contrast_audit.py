@@ -90,12 +90,18 @@ def tabgo(pg, name):
 
 def open_page(b, w=390, h=844):
     ctx = b.new_context(viewport={'width': w, 'height': h}, device_scale_factor=DPR, locale='th-TH', service_workers='block', reduced_motion='reduce')
-    pg = ctx.new_page(); pg.goto(BASE + 'index.html'); pg.wait_for_selector('.plan-card'); return pg
+    pg = ctx.new_page(); pg.goto(BASE + 'index.html'); pg.wait_for_selector('.plan-row'); return pg
 
 with sync_playwright() as p:
     b = p.chromium.launch(); pg = open_page(b)
     audit(pg, 'home')
-    pg.click('.plan-card >> nth=0'); pg.wait_for_selector('[data-action=start-plan]'); audit(pg, 'plan-preview')
+    audit(pg, 'home')
+    pg.click('[data-action=open-settings]'); pg.wait_for_selector('.rest-presets'); audit(pg, 'settings')
+    pg.click('[data-action=set-rest-custom]'); pg.wait_for_selector('#rest-custom'); audit(pg, 'settings(custom)')
+    pg.click('.back'); pg.wait_for_selector('.plan-row')
+    pg.evaluate("async () => { const pl=(await GymStorage.getAll('plans')).find(p=>p.id==='ppl-plan-push'); const exs=await GymStorage.getAll('exercises'); const d=GL.localDateKey(); const ex=exs.find(e=>e.id===pl.items[0].exerciseId); await GymStorage.put('workouts',{id:'au1',date:d,status:'finished',startedAt:d+'T08:00:00Z',finishedAt:d+'T09:00:00Z',planId:pl.id,planName:pl.name,entries:[{id:'au1e',plannedExerciseId:ex.id,plannedExerciseName:ex.name,exerciseId:ex.id,exerciseName:ex.name,equipment:ex.equipment,weightMode:ex.weightMode,plannedSets:3,target:null,draft:null,drafts:[],sets:[{id:'au1s',kind:'working',status:'completed',weight:40,reps:10,at:d+'T08:30:00Z'}]}]}); }")
+    pg.reload(); pg.wait_for_selector('.today-card'); audit(pg, 'home(มีประวัติ+เตือนสำรอง)')
+    pg.click('.plan-row >> nth=0'); pg.wait_for_selector('[data-action=start-plan]'); audit(pg, 'plan-preview')
     pg.click('[data-action=start-plan]'); pg.wait_for_selector('.sets'); audit(pg, 'session-empty')
     pg.fill('input[data-pending="0"][data-field=weight]', '60'); pg.fill('input[data-pending="0"][data-field=reps]', '10')
     pg.click('.cf.cur'); pg.wait_for_timeout(200); audit(pg, 'session-after-confirm(undo+carry)')
@@ -108,31 +114,32 @@ with sync_playwright() as p:
     pg.click('[data-action=manage]'); pg.wait_for_selector('.sheet'); audit(pg, 'sheet-manage'); pg.mouse.click(195, 30); pg.wait_for_timeout(100)
     pg.click('[data-action=ex-history]'); pg.wait_for_selector('.sheet'); audit(pg, 'sheet-ex-history'); pg.mouse.click(195, 30); pg.wait_for_timeout(100)
     tabgo(pg, 'home'); pg.wait_for_selector('.session-bar'); audit(pg, 'home-with-session-bar')
-    pg.click('.plan-card >> nth=1'); pg.click('[data-action=start-plan]'); pg.wait_for_selector('.sheet'); audit(pg, 'sheet-start-conflict')
+    pg.click('.plan-row >> nth=1'); pg.click('[data-action=start-plan]'); pg.wait_for_selector('.sheet'); audit(pg, 'sheet-start-conflict')
     pg.click('[data-action=conflict-discard]'); pg.wait_for_selector('[data-action=discard-confirm]'); audit(pg, 'sheet-discard-confirm'); pg.mouse.click(195, 30); pg.wait_for_timeout(100)
     pg.click('[data-action=conflict-resume]') if pg.locator('[data-action=conflict-resume]').count() else None
     pg.wait_for_timeout(100)
     # สร้างประวัติแล้วจบ
     if pg.locator('[data-action=manage]').count() == 0:
-        pg.goto(BASE + 'index.html'); pg.wait_for_selector('.plan-card'); pg.click('.session-bar [data-action=resume]'); pg.wait_for_selector('.sets')
+        pg.goto(BASE + 'index.html'); pg.wait_for_selector('.plan-row'); pg.click('.session-bar [data-action=resume]'); pg.wait_for_selector('.sets')
     pg.click('[data-action=manage]'); pg.click('.sheet [data-action=finish]'); pg.wait_for_selector('.sheet'); audit(pg, 'sheet-finish-incomplete')
     pg.click('[data-action=finish-confirm]'); pg.wait_for_selector('h1:has-text("จบการฝึกแล้ว")'); audit(pg, 'done')
     for tab, nm in [('plans', 'plans'), ('exercises', 'exercises'), ('history', 'history')]:
         tabgo(pg, tab); pg.wait_for_timeout(200); audit(pg, nm)
+    audit(pg, 'history-overview')
+    pg.click('[data-action=his-week][data-d="-1"]'); pg.wait_for_timeout(100); audit(pg, 'history-overview(สัปดาห์ก่อน)')
     pg.click('[data-action=his-mode][data-mode=exercises]'); pg.wait_for_timeout(100); audit(pg, 'history-by-exercise')
-    pg.click('[data-action=his-mode][data-mode=weeks]'); pg.wait_for_timeout(100); audit(pg, 'history-weekly')
     pg.click('[data-action=his-mode][data-mode=sessions]')
     pg.click('[data-action=open-detail] >> nth=0'); pg.wait_for_selector('.setline'); audit(pg, 'workout-detail')
     tabgo(pg, 'plans'); pg.wait_for_timeout(150)
     pg.click('[data-action=plan-edit] >> nth=0'); pg.wait_for_selector('[data-action=pi-add]'); audit(pg, 'plan-edit')
     pg.click('[data-action=pi-add]'); pg.wait_for_selector('#pick-q'); audit(pg, 'sheet-plan-add-picker')
     pg.mouse.click(195, 30); pg.wait_for_timeout(100)
-    pg.goto(BASE + 'index.html'); pg.wait_for_selector('.plan-card')
+    pg.goto(BASE + 'index.html'); pg.wait_for_selector('.plan-row')
     tabgo(pg, 'exercises'); pg.wait_for_selector('#ex-q'); pg.click('[data-action=ex-new]'); pg.wait_for_selector('#ef-name'); audit(pg, 'exercise-edit(new)')
     pg.click('[data-action=icon-pick][data-v=curl]'); audit(pg, 'exercise-edit(icon picked)')
     tabgo(pg, 'home'); 
     if pg.locator('.sheet').count(): pg.click('[data-action=discard-edit]')
-    pg.wait_for_selector('.plan-card'); pg.click('[data-action=open-backup]'); pg.wait_for_selector('[data-action=export]'); audit(pg, 'backup')
+    pg.wait_for_selector('.plan-row'); pg.click('[data-action=open-backup]'); pg.wait_for_selector('[data-action=export]'); audit(pg, 'backup')
     b.close()
 
 worst.sort(key=lambda x: x[0])

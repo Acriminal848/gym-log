@@ -11,7 +11,7 @@
 
   const GL = window.GL = {
     S: window.GymStorage, P: window.GymProgression, SM: window.GymSummary, I: window.GymIcons, PG: window.GymProgram,
-    APP_VERSION: '1.4.0',
+    APP_VERSION: '1.6.0',
     views: {}
   };
   const S = GL.S, P = GL.P;
@@ -27,10 +27,10 @@
     barbell_total: 'รวมบาร์', dumbbell_each: 'ต่อข้าง', machine: 'ตามเครื่อง', cable: 'ตามสาย', bodyweight: 'น้ำหนักเพิ่ม'
   };
   GL.WEIGHT_MODE_ORDER = ['barbell_total', 'dumbbell_each', 'machine', 'cable', 'bodyweight'];
-  GL.DEFAULT_MUSCLES = ['อก', 'หลัง', 'ไหล่', 'ขา', 'ก้น', 'ไบเซ็ป', 'ไตรเซ็ป', 'หน้าท้อง', 'น่อง', 'ปลายแขน'];
+  GL.DEFAULT_MUSCLES = ['อก', 'หลัง', 'ไหล่ข้าง', 'ไหล่หลัง', 'ต้นขาหน้า', 'ต้นขาหลัง', 'ก้น', 'ไบเซ็ป', 'ไตรเซ็ป', 'หน้าท้อง', 'น่อง', 'ปลายแขน'];
 
   /* ---------- การตั้งค่า (เก็บใน settings store ทีละ key — ไม่ต้องเปลี่ยนโครงฐานข้อมูล) ---------- */
-  GL.DEFAULTS = { restSeconds: 90, restAuto: true, restSound: true, keepAwake: true };
+  GL.DEFAULTS = { restSeconds: 90, restAuto: true, restSound: true, keepAwake: true, showTargets: false };
   GL.REST_PRESETS = [60, 90, 120, 180];
   GL.setting = function (key) {
     const v = window.GL.state.settings[key];
@@ -96,8 +96,9 @@
     undo: null,                 // { label, fn, error } แสดงค้างจนมีการกระทำถัดไป
     carry: null,                // { entryId, weight, afterPending } ข้อเสนอ "เซตที่เหลือใช้น้ำหนักนี้"
     busy: false,
-    hisMode: 'sessions',        // sessions | exercises | weeks
-    sumMode: 'ex', sumView: 'session',
+    hisMode: 'overview',        // overview | exercises | sessions
+    hisWeek: 0,                 // 0 = สัปดาห์นี้, -1 = สัปดาห์ก่อน ...
+    sumMode: 'ex', sumView: 'session', trendMetric: 'top',
     exQuery: '', exMuscle: '',
     lastFinishedId: null,
     rest: null,                 // ตัวจับเวลาพัก { total, endsAt, announced } (อยู่ในหน่วยความจำเท่านั้น)

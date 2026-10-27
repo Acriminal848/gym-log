@@ -63,7 +63,7 @@ def main():
         check('G6 ปิดเสียง → เก็บ false', settings(pg).get('restSound') is False)
         pg.click('[data-action=set-toggle][data-key=restAuto]'); pg.wait_for_timeout(150)
         check('G7 ปิดนับอัตโนมัติ → เก็บ false', settings(pg).get('restAuto') is False)
-        pg.reload(); pg.wait_for_selector('.plan-card')
+        pg.reload(); pg.wait_for_selector('.plan-row')
         check('G8 รีโหลดแล้วค่าตั้งค่ายังอยู่', settings(pg).get('restSeconds') == 45 and settings(pg).get('restAuto') is False)
         pg.click('[data-action=open-settings]'); pg.wait_for_selector('.rest-presets')
         pg.click('[data-action=set-toggle][data-key=restAuto]'); pg.wait_for_timeout(100)

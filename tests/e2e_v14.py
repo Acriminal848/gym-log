@@ -29,7 +29,7 @@ def new_page(b, w=390, h=844, sw='block', offline=False):
     pg.on('pageerror', lambda e: pg.errors.append(str(e)))
     pg.on('console', lambda m: pg.errors.append('console:' + m.text) if m.type == 'error' else None)
     pg.goto(BASE + 'index.html')
-    pg.wait_for_selector('.plan-card')
+    pg.wait_for_selector('.plan-row')
     return pg
 
 def db(pg, store):
@@ -39,7 +39,7 @@ def workouts(pg):
     return db(pg, 'workouts')
 
 def open_plan(pg, name):
-    pg.click('.plan-card:has-text("%s")' % name)
+    pg.click('.plan-row:has-text("%s")' % name)
     pg.wait_for_selector('[data-action=start-plan]')
 
 def start_plan(pg, name):
@@ -55,7 +55,7 @@ def tab(pg, name):
 
 def go_home(pg):
     tab(pg, 'home')
-    pg.wait_for_selector('.plan-card')
+    pg.wait_for_selector('.plan-row')
 
 def fill(pg, row, w, r):
     pg.fill('input[data-pending="%d"][data-field=weight]' % row, str(w))
@@ -88,7 +88,7 @@ with sync_playwright() as p:
     exs, pls = db(pg, 'exercises'), db(pg, 'plans')
     check('A1 เครื่องใหม่: มี 34 ท่า 4 แผน ไม่มีตัวอย่าง', len(exs) == 34 and len(pls) == 4 and not any(e.get('isSample') for e in exs))
     check('A2 ไม่มี workout/ประวัติเลย', len(workouts(pg)) == 0)
-    names = pg.eval_on_selector_all('.plan-card .t', 'els => els.map(e => e.textContent)')
+    names = pg.eval_on_selector_all('.plan-row .t', 'els => els.map(e => e.textContent)')
     check('A3 หน้าแรกแสดงแผน Push/Pull/Legs/วันเสริม ตามลำดับ', names == ['PPL · Push', 'PPL · Pull', 'PPL · Legs', 'PPL · วันเสริม'], names)
     tabs = pg.eval_on_selector_all('#tabs button span', 'els => els.map(e => e.textContent)')
     check('A4 เมนูล่างมี 4 จุด: หน้าแรก/แผน/ท่า/ประวัติ', tabs == ['หน้าแรก', 'แผน', 'ท่า', 'ประวัติ'], tabs)
@@ -104,9 +104,9 @@ with sync_playwright() as p:
     body = pg.inner_text('#view')
     check('B1 หน้าดูแผน: มีปุ่ม “เริ่มฝึกแผนนี้” และแสดงท่า/เซต/reps', 'เริ่มฝึกแผนนี้' in body and '8–12 reps' in body and 'Lat Pulldown' in body and '3 เซต' in body)
     check('B2 เปิดดูแผนไม่สร้างระเบียน workout', len(workouts(pg)) == 0)
-    pg.click('[data-action=home] >> nth=0'); pg.wait_for_selector('.plan-card')
+    pg.click('[data-action=home] >> nth=0'); pg.wait_for_selector('.plan-row')
     open_plan(pg, 'Push')
-    tab(pg, 'home'); pg.wait_for_selector('.plan-card')
+    tab(pg, 'home'); pg.wait_for_selector('.plan-row')
     check('B3 Pull → Home → Push → Home: ไม่มี session/ประวัติ', len(workouts(pg)) == 0 and pg.locator('.session-bar').count() == 0)
     open_plan(pg, 'Legs'); tab(pg, 'plans'); pg.wait_for_selector('text=สร้างแผน')
     check('B4 กลับ Home ได้ทั้งปุ่มบนและเมนูล่าง (ไม่สร้างอะไร)', len(workouts(pg)) == 0)
@@ -118,7 +118,7 @@ with sync_playwright() as p:
     ws = workouts(pg)
     check('C1 เริ่ม Pull: มี draft ค้าง 1 รายการ สถานะ active ไม่ใช่ประวัติ', len(ws) == 1 and ws[0]['status'] == 'active' and ws[0]['planName'] == 'PPL · Pull')
     go_home(pg)
-    check('C2 Home แสดงรายการแผนตามปกติ + แถบค้าง + ปุ่มเล่นต่อ/จัดการ session', pg.locator('.plan-card').count() == 4 and pg.locator('.session-bar [data-action=resume]').count() == 1 and pg.locator('.session-bar [data-action=manage]').count() == 1)
+    check('C2 Home แสดงรายการแผนตามปกติ + แถบค้าง + ปุ่มเล่นต่อ/จัดการ session', pg.locator('.plan-row').count() == 4 and pg.locator('.session-bar [data-action=resume]').count() == 1 and pg.locator('.session-bar [data-action=manage]').count() == 1)
     check('C3 กลับ Home ไม่จบ session และไม่ใช่ประวัติ', pg.locator('.session-bar').inner_text().count('PPL · Pull') == 1)
     start_plan(pg, 'Push'); pg.wait_for_selector('.sets')
     ws = workouts(pg)
@@ -128,13 +128,13 @@ with sync_playwright() as p:
     # ---------- E. ยกเลิก session ว่าง ----------
     pg.click('[data-action=manage]'); pg.wait_for_selector('.sheet')
     pg.click('.sheet [data-action=cancel-session]')
-    pg.wait_for_selector('.plan-card')
+    pg.wait_for_selector('.plan-row')
     check('E1 ยกเลิก session ว่าง: กลับ Home ทันที ไม่มีหน้าต่างยืนยัน ไม่มีประวัติ', len(workouts(pg)) == 0 and pg.locator('.session-bar').count() == 0 and not sheet_open(pg))
 
     # ---------- F. จบทั้งที่ไม่มีเซต ----------
     start_plan(pg, 'Push'); pg.wait_for_selector('.sets')
     pg.click('[data-action=manage]'); pg.click('.sheet [data-action=finish]')
-    pg.wait_for_selector('.plan-card')
+    pg.wait_for_selector('.plan-row')
     check('F1 กดจบทั้งที่ไม่มีเซตที่ยืนยัน: กลับ Home ไม่เพิ่มประวัติเปล่า', len(workouts(pg)) == 0)
     check('F2 มีข้อความบอกว่าไม่สร้างประวัติ', 'ไม่เพิ่มประวัติ' in pg.inner_text('#toast'))
 
@@ -216,14 +216,14 @@ with sync_playwright() as p:
     # ---------- I. draft ไม่ใช่ผลจริง + คงอยู่หลังรีโหลด ----------
     pg.click('[data-action=ex-go]', timeout=500) if pg.locator('[data-action=ex-go]').count() else None
     pg.evaluate("window.__gymlog.GL.flushSave()")
-    pg.reload(); pg.wait_for_selector('.plan-card')
+    pg.reload(); pg.wait_for_selector('.plan-row')
     check('I1 รีโหลด: เปิดที่หน้าแรก มีแถบ session ค้าง ไม่เด้งเข้าหน้าจดเอง', pg.locator('.session-bar').count() == 1 and pg.locator('.sets').count() == 0)
     pg.click('.session-bar [data-action=resume]'); pg.wait_for_selector('.sets')
     check('I2 เล่นต่อ: ไปท่าที่ยังไม่ครบ และเซตที่ยืนยันแล้วยังอยู่', pg.locator('.sets').count() == 1)
     pg.evaluate("window.__gymlog.GL.flushSave()")
     # พิมพ์แต่ไม่ยืนยัน แล้วรีโหลด
     pg.fill('input[data-pending="0"][data-field=weight]', '77'); pg.wait_for_timeout(600)
-    pg.reload(); pg.wait_for_selector('.plan-card'); pg.click('.session-bar [data-action=resume]'); pg.wait_for_selector('.sets')
+    pg.reload(); pg.wait_for_selector('.plan-row'); pg.click('.session-bar [data-action=resume]'); pg.wait_for_selector('.sets')
     ex_cur = pg.inner_text('.ex-head h1')
     check('I3 ค่าที่พิมพ์ไว้แต่ยังไม่ยืนยัน คงอยู่หลังรีโหลดเป็น draft', pg.input_value('input[data-pending="0"][data-field=weight]') == '77', ex_cur)
     n_completed = sum(len([s for s in e['sets'] if s['status'] == 'completed']) for e in workouts(pg)[0]['entries'])
@@ -261,11 +261,11 @@ with sync_playwright() as p:
     pg.click('[data-action=manage]'); pg.click('.sheet [data-action=cancel-session]'); pg.wait_for_selector('.sheet [data-action=discard-confirm]')
     t = pg.inner_text('.sheet')
     check('D10 ยกเลิก session ที่มีผล: ยืนยันก่อน บอกจำนวนเซต (1 เซต) และว่าประวัติที่จบแล้วไม่เปลี่ยน', '1 เซต' in t and 'ประวัติที่จบแล้วไม่เปลี่ยน' in t)
-    pg.click('[data-action=discard-confirm]'); pg.wait_for_selector('.plan-card')
+    pg.click('[data-action=discard-confirm]'); pg.wait_for_selector('.plan-row')
     ws = workouts(pg)
     check('D11 ทิ้งผล session แล้ว: ไม่ต้องลบประวัติมือ; ประวัติ Push เดิมยังอยู่ ไม่มี active', len(ws) == 1 and ws[0]['status'] == 'finished' and ws[0]['planName'] == 'PPL · Push')
     check('D12 session ที่ยกเลิกไม่ปรากฏใน “ประวัติ”', True)
-    tab(pg, 'history'); pg.wait_for_selector('.seg')
+    tab(pg, 'history'); pg.wait_for_selector('.seg'); pg.click('[data-action=his-mode][data-mode=sessions]'); pg.wait_for_timeout(100)
     items = pg.locator('.list-btn[data-action=open-detail]').count()
     check('D13 แท็บประวัติแสดงเฉพาะ workout ที่จบแล้ว (1)', items == 1, items)
 
@@ -282,7 +282,7 @@ with sync_playwright() as p:
     check('G4 จบโดยมีเฉพาะ warm-up: ยังจดไม่ครบ → เสนอกลับไปจด/จบเก็บเฉพาะที่บันทึก', 'ยังจดไม่ครบ' in pg.inner_text('.sheet'))
     pg.click('[data-action=finish-confirm]'); pg.wait_for_selector('h1:has-text("จบการฝึกแล้ว")')
     fw = [w for w in workouts(pg) if w['status'] == 'finished' and w['planName'] == 'PPL · Pull'][0]
-    check('G5 warm-up ล้วนไม่นับเป็น working set ในสรุป (0 เซต)', '0 เซต' in pg.inner_text('.card') and len(fw['entries']) == 1)
+    check('G5 warm-up ล้วนไม่นับเป็น working set ในสรุป (0 เซต)', pg.inner_text('.done-stats .stat:nth-child(2) b') == '0' and len(fw['entries']) == 1)
     pg.click('[data-action=home]')
 
     # ---------- F2/F3 จบไม่ครบ ----------
@@ -307,7 +307,7 @@ with sync_playwright() as p:
     tab(pg, 'home')
 
     # ---------- J. ท่าทางเลือก ----------
-    pg.wait_for_selector('.plan-card'); start_plan(pg, 'Push'); pg.wait_for_selector('.sets')
+    pg.wait_for_selector('.plan-row'); start_plan(pg, 'Push'); pg.wait_for_selector('.sets')
     pg.click('[data-action=swap]'); pg.wait_for_selector('.sheet')
     t = pg.inner_text('.sheet')
     check('J1 แผ่น “ท่าทางเลือก”: ระบุ “เฉพาะวันนี้” และชื่อท่าต้นทาง', 'เฉพาะวันนี้' in t and 'Incline Chest Press' in t)
@@ -326,14 +326,14 @@ with sync_playwright() as p:
     check('J7 สลับหลังจดแล้ว 1 เซต: ผลของท่าเดิมคงอยู่ และมีท่าใหม่ตามหลัง (เหลือ 2 เซต)', w['entries'][0]['exerciseName'].startswith('Incline') and len(w['entries'][0]['sets']) == 1 and w['entries'][0]['plannedSets'] == 1 and w['entries'][1]['exerciseName'].startswith('Smith') and w['entries'][1]['plannedSets'] == 2 and len(w['entries'][1]['sets']) == 0, [(e['exerciseName'], e['plannedSets'], len(e['sets'])) for e in w['entries']])
     check('J8 ท่าใหม่แสดง 2 แถว และ “ท่า 2 / 7”', pg.locator('.st-row[data-pending-row]').count() == 2 and 'ท่า 2 / 7' in pg.inner_text('.s-nav .pos'))
     # ท่าที่ไม่มีท่าทางเลือก: เลือกจากคลัง
-    pg.click('[data-action=manage]'); pg.click('.sheet [data-action=cancel-session]'); pg.click('[data-action=discard-confirm]'); pg.wait_for_selector('.plan-card')
+    pg.click('[data-action=manage]'); pg.click('.sheet [data-action=cancel-session]'); pg.click('[data-action=discard-confirm]'); pg.wait_for_selector('.plan-row')
 
     # ---------- K. ประวัติท่านี้ + ย้อนดู progression ----------
     # สร้างประวัติ 2 ครั้งของ Lat Pulldown ผ่านหน้าจอจริง
     start_plan(pg, 'Pull'); pg.wait_for_selector('.sets')
     log_sets(pg, 50, 12, 3)
     pg.click('[data-action=manage]'); pg.click('.sheet [data-action=finish]'); pg.click('[data-action=finish-confirm]'); pg.wait_for_selector('h1:has-text("จบการฝึกแล้ว")')
-    pg.click('[data-action=home]'); pg.wait_for_selector('.plan-card')
+    pg.click('[data-action=home]'); pg.wait_for_selector('.plan-row')
     start_plan(pg, 'Pull'); pg.wait_for_selector('.sets')
     tg = pg.inner_text('.target')
     check('K1 เป้าหมายวันนี้มาจากผลจริงครั้งก่อน: ครบ ceiling 12 ที่ 50 → เพิ่มน้ำหนักเป็น 55 × 8', '55 kg × 8' in tg and 'เพิ่มน้ำหนัก' in tg, tg)
@@ -352,15 +352,16 @@ with sync_playwright() as p:
     check('K8 เปิด/ปิดประวัติท่านี้ ค่าที่กำลังกรอกไว้ยังอยู่ (reps 9)', pg.input_value('input[data-pending="0"][data-field=reps]') == '9')
     # active session ไม่อยู่ในประวัติ/สรุป
     tab(pg, 'history'); pg.wait_for_selector('.seg')
+    pg.click('[data-action=his-mode][data-mode=sessions]'); pg.wait_for_timeout(100)
     n_hist = pg.locator('.list-btn[data-action=open-detail]').count()
     pg.click('[data-action=his-mode][data-mode=exercises]'); pg.wait_for_timeout(100)
     ex_list = pg.inner_text('#view')
     check('K9 session ที่ค้างไม่ปรากฏในประวัติรายครั้ง/รายท่า (ประวัติจบแล้ว 3: Push, Pull-warmup, Pull + Pull)', n_hist == 4 or n_hist == 3, n_hist)
     check('K10 สรุปรายท่าไม่มีท่าที่ไม่มี working set จริง (เช่น Incline Chest Press ที่จดไว้ใน Push ยังมี) ', 'Lat Pulldown' in ex_list)
-    pg.click('[data-action=his-mode][data-mode=weeks]'); pg.wait_for_timeout(100)
-    check('K11 รายสัปดาห์: แยกรายท่า แสดงหน่วย kg×reps ไม่มีผลรวมข้ามท่า', 'kg×reps' in pg.inner_text('#view'))
+    pg.click('[data-action=his-mode][data-mode=overview]'); pg.wait_for_timeout(100)
+    check('K11 ภาพรวม: เซตต่อกล้ามเนื้อรายสัปดาห์ บอกว่านับเซตตรง และมีตารางความสม่ำเสมอ', 'เซตตรง' in pg.inner_text('#view') and pg.locator('table.cg').count() == 1)
     tab(pg, 'home')
-    pg.click('.session-bar [data-action=manage]'); pg.click('.sheet [data-action=cancel-session]'); pg.wait_for_selector('.plan-card')
+    pg.click('.session-bar [data-action=manage]'); pg.click('.sheet [data-action=cancel-session]'); pg.wait_for_selector('.plan-row')
 
     # ---------- L. แผน: แก้แผนไม่กระทบ session ที่เริ่มแล้ว ----------
     start_plan(pg, 'Push'); pg.wait_for_selector('.sets')
@@ -375,15 +376,15 @@ with sync_playwright() as p:
     pg.click('[data-action=plan-save]'); pg.wait_for_selector('text=สร้างแผน'); pg.wait_for_timeout(200)
     check('L2 บันทึกแผนที่แก้ (ลบ 1 เพิ่ม 1 ตามลำดับที่จัด) ใช้ปุ่มขึ้น/ลง ไม่ต้องลาก', len([p for p in db(pg, 'plans') if p['id'] == 'ppl-plan-push'][0]['items']) == 6)
     check('L3 session ที่เริ่มไปแล้วเก็บ snapshot เดิม (ท่าเท่าเดิม)', len([w for w in workouts(pg) if w['status'] == 'active'][0]['entries']) == n_entries)
-    tab(pg, 'home'); pg.click('.session-bar [data-action=manage]'); pg.click('.sheet [data-action=cancel-session]'); pg.wait_for_selector('.plan-card')
+    tab(pg, 'home'); pg.click('.session-bar [data-action=manage]'); pg.click('.sheet [data-action=cancel-session]'); pg.wait_for_selector('.plan-row')
 
     # ---------- M. ท่า: ค้นหา/กรอง/เพิ่มท่า ----------
     tab(pg, 'exercises'); pg.wait_for_selector('#ex-q')
     pg.fill('#ex-q', 'lateral'); pg.wait_for_timeout(100)
     rows = pg.locator('#ex-list .list-btn').count()
     check('M1 ค้นหาท่า “lateral” เจอ 2 ท่า', rows == 2, rows)
-    pg.fill('#ex-q', ''); pg.click('[data-action=ex-muscle][data-v=ขา]'); pg.wait_for_timeout(100)
-    check('M2 กรองหมวดขา', pg.locator('#ex-list .list-btn').count() >= 4 and 'Leg Press' in pg.inner_text('#ex-list'))
+    pg.fill('#ex-q', ''); pg.click('[data-action=ex-muscle][data-v=ต้นขาหน้า]'); pg.wait_for_timeout(100)
+    check('M2 กรองหมวดต้นขาหน้า (1.6 แยกจาก “ขา”)', pg.locator('#ex-list .list-btn').count() >= 4 and 'Leg Press' in pg.inner_text('#ex-list'))
     pg.click('[data-action=ex-muscle][data-v=""]')
     pg.click('[data-action=ex-new]'); pg.wait_for_selector('#ef-name')
     pg.fill('#ef-name', 'Test Dips'); pg.fill('#ef-equipment', 'น้ำหนักตัว'); pg.select_option('#ef-mode', 'bodyweight')
@@ -401,8 +402,8 @@ with sync_playwright() as p:
     pg.click('[data-action=ex-back]'); pg.wait_for_selector('.sheet'); pg.click('[data-action=discard-edit]'); pg.wait_for_selector('#ex-q')
     pg.click('#ex-list .list-btn >> nth=0'); pg.wait_for_selector('[data-action=ex-delete-ask]'); pg.click('[data-action=ex-delete-ask]'); pg.click('[data-action=ex-delete]'); pg.wait_for_selector('#ex-q')
     check('M5 ท่าที่ยังไม่มีประวัติลบได้ (Test Dips)', not [e for e in db(pg, 'exercises') if e['name'] == 'Test Dips'])
-    tab(pg, 'history'); pg.wait_for_selector('.seg')
-    tab(pg, 'home'); pg.wait_for_selector('.plan-card')
+    tab(pg, 'history'); pg.wait_for_selector('.seg'); pg.click('[data-action=his-mode][data-mode=sessions]'); pg.wait_for_timeout(100)
+    tab(pg, 'home'); pg.wait_for_selector('.plan-row')
 
     # ---------- N. ไม่มี error ----------
     check('N1 ไม่มี error ในคอนโซลตลอดการทดสอบ', not pg.errors, pg.errors)
@@ -417,7 +418,7 @@ with sync_playwright() as p:
     pg.evaluate("() => { GymStorage.put = window.__origPut; }")
     confirm(pg); pg.wait_for_timeout(250)
     check('P3 ลองอีกครั้งสำเร็จ → ✓ และบันทึกลงเครื่อง', pg.locator('.cf.done').count() == 1 and len([s for w in workouts(pg) if w['status'] == 'active' for s in w['entries'][0]['sets']]) == 1)
-    pg.click('[data-action=manage]'); pg.click('.sheet [data-action=cancel-session]'); pg.click('[data-action=discard-confirm]'); pg.wait_for_selector('.plan-card')
+    pg.click('[data-action=manage]'); pg.click('.sheet [data-action=cancel-session]'); pg.click('[data-action=discard-confirm]'); pg.wait_for_selector('.plan-row')
 
     # ---------- Q. สำรอง/กู้คืน ----------
     # สร้างประวัติให้มีข้อมูล
@@ -425,7 +426,7 @@ with sync_playwright() as p:
     log_sets(pg, 120, 10, 3)
     pg.click('.cta-next'); log_sets(pg, 30, 12, 3)
     pg.click('[data-action=manage]'); pg.click('.sheet [data-action=finish]'); pg.click('[data-action=finish-confirm]'); pg.wait_for_selector('h1:has-text("จบการฝึกแล้ว")')
-    pg.click('[data-action=home]'); pg.wait_for_selector('.plan-card')
+    pg.click('[data-action=home]'); pg.wait_for_selector('.plan-row')
     pg.click('[data-action=open-backup]'); pg.wait_for_selector('[data-action=export]')
     check('Q1 หน้าสำรอง: อธิบายว่าไม่มี cloud สำรองอัตโนมัติ', 'ไม่ได้สำรองบน cloud' in pg.inner_text('#view'))
     with pg.expect_download() as dl:
@@ -437,7 +438,7 @@ with sync_playwright() as p:
     check('Q3 ไฟล์สำรองรวมท่า/แผน/ประวัติ และมีวันที่สำรองล่าสุดบันทึกหลังดาวน์โหลดเริ่มแล้ว', len(data['data']['exercises']) >= 34 and len(data['data']['plans']) == 4 and any(w['status'] == 'finished' for w in data['data']['workouts']))
     check('Q4 วันที่สำรองล่าสุดแสดงบนหน้าแรกหลังส่งออก', 'ยังไม่เคยสำรอง' not in (pg.click('[data-action=home]') or pg.inner_text('#view')) or True)
     pg.click('[data-action=home]') if pg.locator('[data-action=home]').count() else None
-    pg.wait_for_selector('.plan-card')
+    pg.wait_for_selector('.plan-row')
     check('Q5 หน้าแรกแสดงวันที่สำรองล่าสุดจริง (ไม่ใช่ “ยังไม่เคยสำรอง”)', 'ยังไม่เคยสำรอง' not in pg.inner_text('#view') and 'สำรองล่าสุด' in pg.inner_text('#view'))
     # ไฟล์เสีย
     pg.click('[data-action=open-backup]'); bad = os.path.join(tempfile.gettempdir(), 'gl_bad.json'); open(bad, 'w').write('{"nope":1')
@@ -456,7 +457,7 @@ with sync_playwright() as p:
     check('Q8 เลือกไฟล์ดี: แสดงสรุปจำนวนรายการ + ไม่ทับทันที (ยังมี tmp-plan)', 'สรุปไฟล์สำรอง' in t and any(p['id'] == 'tmp-plan' for p in db(pg, 'plans')))
     pg.click('[data-action=import-replace-ask]'); pg.wait_for_selector('[data-action=import-replace]')
     check('Q9 แทนที่ทั้งหมดต้องยืนยันอีกชั้น', 'ยืนยันการแทนที่' in pg.inner_text('.sheet') and any(p['id'] == 'tmp-plan' for p in db(pg, 'plans')))
-    pg.click('[data-action=import-replace]'); pg.wait_for_selector('.plan-card'); pg.wait_for_timeout(300)
+    pg.click('[data-action=import-replace]'); pg.wait_for_selector('.plan-row'); pg.wait_for_timeout(300)
     check('Q10 หลังแทนที่: tmp-plan หายไป ข้อมูลตรงไฟล์ และไม่มีการเติมโปรแกรมซ้ำ', not any(p['id'] == 'tmp-plan' for p in db(pg, 'plans')) and len(db(pg, 'plans')) == 4 and len(db(pg, 'exercises')) == len(data['data']['exercises']))
     pg.click('[data-action=open-backup]'); pg.wait_for_selector('[data-action=export]')
     with pg.expect_download() as dl2:
@@ -489,7 +490,7 @@ with sync_playwright() as p:
 
     # ---------- S. offline + service worker ----------
     ctx = b.new_context(viewport={'width': 390, 'height': 844}, locale='th-TH')
-    pg3 = ctx.new_page(); pg3.goto(BASE + 'index.html'); pg3.wait_for_selector('.plan-card')
+    pg3 = ctx.new_page(); pg3.goto(BASE + 'index.html'); pg3.wait_for_selector('.plan-row')
     pg3.evaluate("navigator.serviceWorker.ready")
     pg3.wait_for_timeout(1500)
     keys = pg3.evaluate("caches.keys()")
@@ -497,10 +498,10 @@ with sync_playwright() as p:
     need = ['core.js', 'views.js', 'app.js', 'icons.js', 'program.js', 'styles.css', 'inter-latin-wght-normal.woff2', 'noto-sans-thai-thai-wght-normal.woff2']
     check('S1 service worker ติดตั้งแล้ว และแคชไฟล์แอป+ฟอนต์ครบ', len(keys) == 1 and all(n in cached for n in need), (keys, [n for n in need if n not in cached]))
     ctx.set_offline(True)
-    pg3.reload(); pg3.wait_for_selector('.plan-card')
+    pg3.reload(); pg3.wait_for_selector('.plan-row')
     fonts_ok = pg3.evaluate("""async () => { await document.fonts.ready; return document.fonts.check('16px Inter'); }""")
-    check('S2 offline: เปิดแอปได้ แผนอยู่ครบ ฟอนต์โหลดจากแคช', pg3.locator('.plan-card').count() == 4 and fonts_ok)
-    pg3.click('.plan-card >> nth=0'); pg3.click('[data-action=start-plan]'); pg3.wait_for_selector('.sets'); log_sets(pg3, 50, 10)
+    check('S2 offline: เปิดแอปได้ แผนอยู่ครบ ฟอนต์โหลดจากแคช', pg3.locator('.plan-row').count() == 4 and fonts_ok)
+    pg3.click('.plan-row >> nth=0'); pg3.click('[data-action=start-plan]'); pg3.wait_for_selector('.sets'); log_sets(pg3, 50, 10)
     check('S3 offline: จดเซตได้ (บันทึกในเครื่อง)', len([s for w in db(pg3, 'workouts') for e in w['entries'] for s in e['sets']]) == 1)
     ctx.close()
 

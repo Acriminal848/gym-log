@@ -23,8 +23,8 @@
     ['ppl-flat-chest-press-b', 'Flat Chest Press (Other Machine)', 'อก', 'เครื่องอื่น', 8, 12, 5, 'machine', 'chest_press', []],
     ['ppl-pec-deck', 'Pec Deck Fly', 'อก', 'เครื่อง', 10, 15, 5, 'machine', 'pec_fly', ['ppl-cable-fly']],
     ['ppl-cable-fly', 'Cable Fly', 'อก', 'สายเคเบิล', 10, 15, 2.5, 'cable', 'cable_fly', []],
-    ['ppl-lateral-raise-machine', 'Lateral Raise (Machine)', 'ไหล่', 'เครื่อง', 12, 20, 2.5, 'machine', 'lateral_raise', ['ppl-cable-lateral-raise']],
-    ['ppl-cable-lateral-raise', 'Cable Lateral Raise', 'ไหล่', 'สายเคเบิล', 12, 20, 2.5, 'cable', 'cable_lateral', []],
+    ['ppl-lateral-raise-machine', 'Lateral Raise (Machine)', 'ไหล่ข้าง', 'เครื่อง', 12, 20, 2.5, 'machine', 'lateral_raise', ['ppl-cable-lateral-raise']],
+    ['ppl-cable-lateral-raise', 'Cable Lateral Raise', 'ไหล่ข้าง', 'สายเคเบิล', 12, 20, 2.5, 'cable', 'cable_lateral', []],
     ['ppl-triceps-pushdown', 'Triceps Pushdown (Cable)', 'ไตรเซ็ป', 'สายเคเบิล', 10, 15, 2.5, 'cable', 'pushdown', ['ppl-triceps-extension-machine']],
     ['ppl-triceps-extension-machine', 'Triceps Extension (Machine)', 'ไตรเซ็ป', 'เครื่อง', 10, 15, 5, 'machine', 'pushdown', []],
     ['ppl-ab-crunch-machine', 'Ab Crunch (Machine)', 'หน้าท้อง', 'เครื่อง', 10, 15, 5, 'machine', 'crunch', ['ppl-cable-crunch']],
@@ -37,20 +37,20 @@
     ['ppl-tbar-row-close', 'T-Bar Row (Close Grip)', 'หลัง', 'เครื่อง T-Bar', 8, 12, 5, 'machine', 'tbar_row', []],
     ['ppl-seated-cable-row-wide', 'Seated Cable Row (Wide Grip)', 'หลัง', 'สายเคเบิล', 10, 15, 5, 'cable', 'cable_row', ['ppl-tbar-row-wide']],
     ['ppl-tbar-row-wide', 'Chest-Supported T-Bar Row (Wide Grip)', 'หลัง', 'เครื่อง T-Bar', 10, 15, 5, 'machine', 'tbar_row', []],
-    ['ppl-reverse-pec-deck', 'Reverse Pec Deck', 'ไหล่', 'เครื่อง', 12, 20, 5, 'machine', 'rear_fly', ['ppl-cable-rear-delt-fly']],
-    ['ppl-cable-rear-delt-fly', 'Cable Rear Delt Fly', 'ไหล่', 'สายเคเบิล', 12, 20, 2.5, 'cable', 'rear_fly', []],
+    ['ppl-reverse-pec-deck', 'Reverse Pec Deck', 'ไหล่หลัง', 'เครื่อง', 12, 20, 5, 'machine', 'rear_fly', ['ppl-cable-rear-delt-fly']],
+    ['ppl-cable-rear-delt-fly', 'Cable Rear Delt Fly', 'ไหล่หลัง', 'สายเคเบิล', 12, 20, 2.5, 'cable', 'rear_fly', []],
     ['ppl-cable-curl', 'Cable Curl', 'ไบเซ็ป', 'สายเคเบิล', 8, 15, 2.5, 'cable', 'curl', ['ppl-ez-bar-curl', 'ppl-preacher-curl-machine']],
     ['ppl-ez-bar-curl', 'EZ-Bar Curl', 'ไบเซ็ป', 'EZ-bar', 8, 15, 2.5, 'barbell_total', 'bar_curl', []],
     ['ppl-preacher-curl-machine', 'Preacher Curl (Machine)', 'ไบเซ็ป', 'เครื่อง', 8, 15, 5, 'machine', 'preacher', []],
     // Legs
-    ['ppl-leg-press', 'Leg Press', 'ขา', 'เครื่อง', 8, 12, 10, 'machine', 'leg_press', ['ppl-hack-squat'], 'ถ้ามีอาการชาหรือร้าวลงขา ให้หยุดท่านี้'],
-    ['ppl-hack-squat', 'Hack Squat', 'ขา', 'เครื่อง', 8, 12, 10, 'machine', 'hack_squat', []],
-    ['ppl-seated-leg-curl', 'Seated Leg Curl', 'ขา', 'เครื่อง', 10, 15, 5, 'machine', 'leg_curl', ['ppl-lying-leg-curl']],
-    ['ppl-lying-leg-curl', 'Lying Leg Curl', 'ขา', 'เครื่อง', 10, 15, 5, 'machine', 'lying_curl', []],
+    ['ppl-leg-press', 'Leg Press', 'ต้นขาหน้า', 'เครื่อง', 8, 12, 10, 'machine', 'leg_press', ['ppl-hack-squat'], 'ถ้ามีอาการชาหรือร้าวลงขา ให้หยุดท่านี้'],
+    ['ppl-hack-squat', 'Hack Squat', 'ต้นขาหน้า', 'เครื่อง', 8, 12, 10, 'machine', 'hack_squat', []],
+    ['ppl-seated-leg-curl', 'Seated Leg Curl', 'ต้นขาหลัง', 'เครื่อง', 10, 15, 5, 'machine', 'leg_curl', ['ppl-lying-leg-curl']],
+    ['ppl-lying-leg-curl', 'Lying Leg Curl', 'ต้นขาหลัง', 'เครื่อง', 10, 15, 5, 'machine', 'lying_curl', []],
     ['ppl-hip-thrust-machine', 'Hip Thrust (Machine)', 'ก้น', 'เครื่อง', 8, 12, 10, 'machine', 'hip_thrust', ['ppl-smith-hip-thrust']],
     ['ppl-smith-hip-thrust', 'Smith Machine Hip Thrust', 'ก้น', 'Smith Machine', 8, 12, 5, 'machine', 'hip_thrust', []],
-    ['ppl-leg-extension', 'Leg Extension', 'ขา', 'เครื่อง', 10, 15, 5, 'machine', 'leg_extension', ['ppl-leg-extension-b']],
-    ['ppl-leg-extension-b', 'Leg Extension (Other Machine)', 'ขา', 'เครื่องอื่น', 10, 15, 5, 'machine', 'leg_extension', []],
+    ['ppl-leg-extension', 'Leg Extension', 'ต้นขาหน้า', 'เครื่อง', 10, 15, 5, 'machine', 'leg_extension', ['ppl-leg-extension-b']],
+    ['ppl-leg-extension-b', 'Leg Extension (Other Machine)', 'ต้นขาหน้า', 'เครื่องอื่น', 10, 15, 5, 'machine', 'leg_extension', []],
     ['ppl-calf-raise-machine', 'Calf Raise (Machine)', 'น่อง', 'เครื่อง', 10, 20, 5, 'machine', 'calf_raise', ['ppl-leg-press-calf-raise']],
     ['ppl-leg-press-calf-raise', 'Leg Press Calf Raise', 'น่อง', 'เครื่อง Leg Press', 10, 20, 10, 'machine', 'calf_raise', []]
   ];
@@ -156,7 +156,44 @@
     return { ops: ops, report: report };
   }
 
-  const api = { PROGRAM_ID: PROGRAM_ID, exercises: exercises, plans: plans, buildInstall: buildInstall };
+
+  /* ---------- 1.6: แยกชื่อกล้ามเนื้อ (ไหล่ → ไหล่ข้าง/ไหล่หลัง · ขา → ต้นขาหน้า/ต้นขาหลัง) ----------
+   * ย้ายข้อมูลแบบไม่ทำลาย:
+   *  - แตะเฉพาะ “ท่าที่โปรแกรม PPL ติดตั้งให้” (รหัส ppl-*) ที่ชื่อกล้ามเนื้อยังเป็นค่าเดิมของโปรแกรมเท่านั้น
+   *    ท่าที่คุณสร้างเอง หรือท่าที่คุณแก้ชื่อกล้ามเนื้อเองแล้ว ไม่ถูกแตะ
+   *  - เก็บค่าเดิมไว้ก่อนใน settings คีย์ muscleSplitBackup (ใช้ย้อนกลับได้) แล้วค่อยแก้ ทั้งหมดอยู่ใน transaction เดียว
+   *  - ทำครั้งเดียว (ธง muscleSplit; หลังกู้คืนไฟล์สำรองเก่าจะรันอีกครั้งแบบ force) และทำซ้ำได้ปลอดภัย (ไม่มีอะไรให้แก้ก็ไม่เขียนอะไร นอกจากธง)
+   *  - ประวัติการฝึก (workouts) ไม่ถูกแตะเลย: ในประวัติไม่ได้เก็บชื่อกล้ามเนื้อ ระบบดูจากท่าปัจจุบัน
+   */
+  const MUSCLE_SPLIT = {
+    'ppl-lateral-raise-machine': ['ไหล่', 'ไหล่ข้าง'],
+    'ppl-cable-lateral-raise': ['ไหล่', 'ไหล่ข้าง'],
+    'ppl-reverse-pec-deck': ['ไหล่', 'ไหล่หลัง'],
+    'ppl-cable-rear-delt-fly': ['ไหล่', 'ไหล่หลัง'],
+    'ppl-leg-press': ['ขา', 'ต้นขาหน้า'],
+    'ppl-hack-squat': ['ขา', 'ต้นขาหน้า'],
+    'ppl-leg-extension': ['ขา', 'ต้นขาหน้า'],
+    'ppl-leg-extension-b': ['ขา', 'ต้นขาหน้า'],
+    'ppl-seated-leg-curl': ['ขา', 'ต้นขาหลัง'],
+    'ppl-lying-leg-curl': ['ขา', 'ต้นขาหลัง']
+  };
+
+  function buildMuscleSplit(db, force) {
+    if (!force && db.settings && db.settings.muscleSplit) return null;
+    const ops = [], backup = [];
+    db.exercises.forEach(function (e) {
+      const m = MUSCLE_SPLIT[e.id];
+      if (!m || e.muscle !== m[0]) return;
+      const c = JSON.parse(JSON.stringify(e)); c.muscle = m[1];
+      ops.push({ store: 'exercises', put: c });
+      backup.push({ id: e.id, muscle: e.muscle });
+    });
+    if (backup.length) ops.push({ store: 'settings', put: { key: 'muscleSplitBackup', value: backup } });
+    ops.push({ store: 'settings', put: { key: 'muscleSplit', value: 'v1' } });
+    return { ops: ops, changed: backup.length };
+  }
+
+  const api = { PROGRAM_ID: PROGRAM_ID, exercises: exercises, plans: plans, buildInstall: buildInstall, buildMuscleSplit: buildMuscleSplit, MUSCLE_SPLIT: MUSCLE_SPLIT };
   global.GymProgram = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -853,6 +853,7 @@
         await S.importReplace(imp.clean);
         pendingImport = null;
         await reloadAll();
+        await ensureMuscleSplit(true);
         state.tab = 'home'; state.sub = null; GL.clearUndo();
         render(); top();
         GL.toast('กู้คืนแล้ว: ' + imp.summary.exercises + ' ท่า, ' + imp.summary.plans + ' แผน, ' + imp.summary.workouts + ' workout');
@@ -861,6 +862,7 @@
         pendingImport = null;
         const keepActive = state.active, keepCur = state.cur;
         await reloadAll();
+        await ensureMuscleSplit(true);
         if (keepActive) { state.active = GL.findWorkout(keepActive.id) || state.active; state.cur = keepCur; }
         render();
         const added = r.added.exercises + r.added.plans + r.added.workouts;
@@ -1026,6 +1028,8 @@
       case 'open-detail': nav('history', { name: 'detail', id: d.id }); break;
       case 'his-back': nav('history', null); break;
       case 'his-mode': state.hisMode = d.mode; render(); break;
+      case 'his-week': state.hisWeek = Math.min(0, (state.hisWeek || 0) + Number(d.d)); render(); break;
+      case 'trend-metric': state.trendMetric = d.v === 'e1rm' ? 'e1rm' : 'top'; render(); break;
       case 'delete-workout':
         GL.openSheet('<h3>ลบ workout นี้ออกจากประวัติ?</h3><p class="muted">ลบแล้วกู้คืนไม่ได้ (ถ้าไม่ได้สำรองไว้)</p>' +
           '<div class="stack"><button type="button" class="btn danger solid" data-action="delete-workout-confirm" data-id="' + esc(d.id) + '">ลบ</button>' +
@@ -1226,11 +1230,20 @@
     await reloadAll();
   }
 
+  // 1.6: แยกชื่อกล้ามเนื้อของท่าในโปรแกรม PPL (ดู program.js) — ไม่ทำลาย, มีสำรองค่าเดิม, ทำใน transaction เดียว
+  async function ensureMuscleSplit(force) {
+    const res = PG.buildMuscleSplit({ exercises: state.exercises, settings: state.settings }, force);
+    if (!res) return;
+    try { await S.batch(res.ops); } catch (e) { return; }   // ล้มเหลว = ไม่เปลี่ยนอะไร ลองใหม่ตอนเปิดครั้งหน้า
+    if (res.changed || !state.settings.muscleSplit) await reloadAll();
+  }
+
   async function boot() {
     try {
       state.settings = await S.init();
       await reloadAll();
       await ensureProgram();
+      await ensureMuscleSplit(false);
     } catch (e) {
       view.innerHTML = '<div class="card"><h3>เปิดฐานข้อมูลไม่ได้</h3><p class="muted">' + esc(e && e.message ? e.message : e) +
         '</p><p class="muted small">ถ้าเปิดใน Private Browsing ให้เปิดใน Safari ปกติ หรือจาก Home Screen</p></div>';

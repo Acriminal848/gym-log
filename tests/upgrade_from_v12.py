@@ -50,7 +50,7 @@ try:
         pg = c2.new_page(); errs = []; pg.on('pageerror', lambda e: errs.append(str(e)))
         pg.on('console', lambda m: errs.append('console:'+m.text) if m.type=='error' else None)
         pg.goto(URL)
-        try: pg.wait_for_selector('.plan-card', timeout=8000)
+        try: pg.wait_for_selector('.plan-row', timeout=8000)
         except Exception: print('BOOT FAIL', errs, pg.inner_text('body')[:300]); raise
         pg.wait_for_timeout(300)
         exs = pg.evaluate("GymStorage.getAll('exercises')"); pls = pg.evaluate("GymStorage.getAll('plans')"); ws = pg.evaluate("GymStorage.getAll('workouts')")
@@ -74,7 +74,7 @@ try:
         check('U12 จดเซตต่อใน session เก่าได้และบันทึกลงเครื่อง (2 เซต)', len(w['entries'][0]['sets']) == 2 and w['entries'][0]['sets'][1]['reps'] == 9)
         # รีโหลด: ไม่ติดตั้งซ้ำ ไม่แจ้งซ้ำหลังรับทราบ
         pg.click('#tabs [data-tab=home]'); pg.click('[data-action=dismiss-notice]'); pg.wait_for_timeout(200)
-        pg.reload(); pg.wait_for_selector('.plan-card'); pg.wait_for_timeout(300)
+        pg.reload(); pg.wait_for_selector('.plan-row'); pg.wait_for_timeout(300)
         exs2 = pg.evaluate("GymStorage.getAll('exercises')")
         check('U13 รีโหลด: ไม่เพิ่มท่าซ้ำ และไม่แจ้งเตือนซ้ำหลังรับทราบ', len(exs2) == len(exs) and pg.locator('.notice').count() == 0)
         # ส่งออกจาก 1.3.0 ผ่าน validator

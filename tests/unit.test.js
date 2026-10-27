@@ -404,5 +404,162 @@ test('ตั้งค่า restSeconds/restAuto/restSound/keepAwake: เก็�
   assert.deepStrictEqual(bad.clean.settings, { unit: 'kg' });
 });
 
+/* ================= summary: หน้าแรก (1.5) ================= */
+const PLANS = [{ id: 'p-push', items: [{ exerciseId: 'a' }, { exerciseId: 'b' }] }, { id: 'p-pull', items: [{ exerciseId: 'c' }] },
+  { id: 'p-legs', items: [{ exerciseId: 'd' }, { exerciseId: 'a' }] }, { id: 'ppl-plan-extra', items: [{ exerciseId: 'e' }] }, { id: 'p-old', archived: true, items: [] }];
+const EXMAP = { a: { id: 'a', muscle: 'อก' }, b: { id: 'b', muscle: 'ไตรเซ็ป' }, c: { id: 'c', muscle: 'หลัง' }, d: { id: 'd', muscle: 'ต้นขาหน้า' }, e: { id: 'e', muscle: 'ไหล่หลัง' } };
+const exById = function (id) { return EXMAP[id] || null; };
+function wk(date, planId, exIds, sets) {
+  n++;
+  return { id: 'w' + n, date: date, status: 'finished', planId: planId, planName: planId, entries: exIds.map(function (id) { n++; return { id: 'e' + n, exerciseId: id, sets: sets || sets === 0 ? sets : [] }; }) };
+}
+function ws(k) { return [].concat.apply([], new Array(k).fill(0).map(function () { return [{ kind: 'working', status: 'completed', weight: 50, reps: 10 }]; })); }
+test('วงจร: ไม่รวมวันเสริมและแผนที่เก็บ, ตัวถัดไปต่อจากครั้งล่าสุดและวนกลับ', () => {
+  const rot = SM.rotationPlans(PLANS);
+  assert.deepStrictEqual(rot.map(function (p) { return p.id; }), ['p-push', 'p-pull', 'p-legs']);
+  assert.strictEqual(SM.nextInRotation(rot, []).plan.id, 'p-push');
+  assert.strictEqual(SM.nextInRotation(rot, [{ planId: 'p-push' }]).plan.id, 'p-pull');
+  assert.strictEqual(SM.nextInRotation(rot, [{ planId: 'p-legs' }, { planId: 'p-pull' }]).plan.id, 'p-push');
+  assert.strictEqual(SM.nextInRotation(rot, [{ planId: 'ppl-plan-extra' }, { planId: 'p-pull' }]).plan.id, 'p-legs', 'วันเสริมไม่ขยับวงจร');
+  assert.strictEqual(SM.nextInRotation(rot, [{ planId: 'deleted' }]).plan.id, 'p-push');
+  assert.strictEqual(SM.nextInRotation([], []), null);
+});
+test('แถบสัปดาห์: จันทร์–อาทิตย์, นับเฉพาะ session ที่จบและมีเซตจริง', () => {
+  // 2026-10-28 เป็นวันพุธ → สัปดาห์ 26 ต.ค. – 1 พ.ย.
+  const list = [wk('2026-10-26', 'p-push', ['a'], ws(3)), wk('2026-10-27', 'p-pull', ['c'], ws(0)), wk('2026-10-25', 'p-legs', ['d'], ws(3)),
+    Object.assign(wk('2026-10-28', 'p-legs', ['d'], ws(2)), { status: 'active' })];
+  const r = SM.weekStrip(list, '2026-10-28');
+  assert.strictEqual(r.weekStart, '2026-10-26');
+  assert.strictEqual(r.days.length, 7);
+  assert.strictEqual(r.days[0].key, '2026-10-26');
+  assert.strictEqual(r.days[6].key, '2026-11-01');
+  assert.strictEqual(r.sessions, 1, 'ว่างเปล่า/ค้างอยู่/สัปดาห์ก่อน ไม่นับ');
+  assert.strictEqual(r.days[0].sessions.length, 1);
+  assert.ok(r.days[2].isToday && !r.days[2].isFuture && r.days[3].isFuture);
+});
+test('เซตต่อกล้ามเนื้อในสัปดาห์: นับเซตตรงตามกล้ามเนื้อหลักของท่า, ท่าที่ถูกลบข้าม', () => {
+  const list = [wk('2026-10-26', 'p-push', ['a', 'b'], ws(3)), wk('2026-10-27', 'p-legs', ['d', 'a', 'zzz'], ws(2)), wk('2026-10-20', 'p-pull', ['c'], ws(5))];
+  const m = SM.muscleSets(list, exById, '2026-10-26');
+  assert.deepStrictEqual(m, { 'อก': 5, 'ไตรเซ็ป': 3, 'ต้นขาหน้า': 2 });
+});
+test('กล้ามเนื้อที่ยังไม่ได้เล่นสัปดาห์นี้: เฉพาะที่วงจรครอบคลุม (ไม่รวมวันเสริม) และเรียงตามแผน', () => {
+  const rot = SM.rotationPlans(PLANS);
+  assert.deepStrictEqual(SM.untrainedMuscles(rot, exById, { 'อก': 5 }), ['ไตรเซ็ป', 'หลัง', 'ต้นขาหน้า']);
+  assert.deepStrictEqual(SM.untrainedMuscles(rot, exById, { 'อก': 1, 'ไตรเซ็ป': 1, 'หลัง': 1, 'ต้นขาหน้า': 1 }), []);
+});
+
+/* ================= summary: ประวัติแบบภาพรวม (1.6) ================= */
+function sess(date, planId, entries, over) {
+  n++;
+  return Object.assign({ id: 'w' + n, date: date, status: 'finished', planId: planId, planName: planId, startedAt: date + 'T08:00:00Z', finishedAt: date + 'T08:50:00Z',
+    entries: entries.map(function (x) { n++; return { id: 'e' + n, exerciseId: x[0], exerciseName: x[0], equipment: 'เครื่อง', weightMode: 'machine', sets: x[1].map(function (p) { n++; return { id: 's' + n, kind: 'working', status: 'completed', weight: p[0], reps: p[1] }; }) }; }) }, over || {});
+}
+test('1RM โดยประมาณ (Epley) ปัดทศนิยม 2 ตำแหน่ง', () => {
+  assert.strictEqual(SM.e1rm(100, 10), 133.33);
+  assert.strictEqual(SM.e1rm(60, 1), 62);
+});
+test('muscleWeek: เซตและจำนวนครั้งที่ฝึกต่อกล้ามเนื้อ (นับ session ละ 1 ต่อกล้ามเนื้อ)', () => {
+  const list = [sess('2026-10-26', 'x', [['a', [[50, 10], [50, 9]]], ['b', [[20, 12]]], ['a', [[40, 10]]]]), sess('2026-10-28', 'y', [['a', [[50, 10]]]]), sess('2026-10-20', 'z', [['a', [[50, 10]]]])];
+  const m = SM.muscleWeek(list, exById, '2026-10-26');
+  assert.deepStrictEqual(m['อก'], { sets: 4, sessions: 2 });
+  assert.deepStrictEqual(m['ไตรเซ็ป'], { sets: 1, sessions: 1 });
+  assert.strictEqual(m['หลัง'], undefined);
+});
+test('แนวโน้มรายท่า: เก่า→ใหม่, PR เมื่อทำลายสถิติเดิมเท่านั้น (ครั้งแรกไม่ใช่ PR, เท่าเดิมไม่ใช่ PR)', () => {
+  const rows = [['2026-03-01', [[50, 10]]], ['2026-03-08', [[55, 8]]], ['2026-03-15', [[55, 9]]], ['2026-03-22', [[52.5, 12]]], ['2026-03-29', [[60, 6]]]].map(function (x) {
+    return { workoutId: 'w' + x[0], date: x[0], sets: x[1].map(function (p) { return { weight: p[0], reps: p[1] }; }), top: { weight: x[1][0][0], reps: x[1][0][1] } };
+  });
+  const top = SM.exerciseTrend(rows.slice().reverse(), 'top');
+  assert.deepStrictEqual(top.map(function (p) { return p.value; }), [50, 55, 55, 52.5, 60]);
+  assert.deepStrictEqual(top.map(function (p) { return p.pr; }), [false, true, false, false, true]);
+  const e = SM.exerciseTrend(rows.slice().reverse(), 'e1rm');
+  assert.deepStrictEqual(e.map(function (p) { return p.value; }), [66.67, 69.67, 71.5, 73.5, 72]);
+  assert.deepStrictEqual(e.map(function (p) { return p.pr; }), [false, true, true, true, false], '52.5×12 ให้ 1RM สูงกว่า 60×6 จึงเป็น PR ของ 1RM ทั้งที่น้ำหนักลดลง');
+});
+test('ตารางความสม่ำเสมอ 12 สัปดาห์: เก่า→ใหม่ จันทร์–อาทิตย์ นับเฉพาะ session ที่มีเซตจริง', () => {
+  const list = [sess('2026-10-26', 'x', [['a', [[50, 10]]]]), sess('2026-10-26', 'y', [['b', [[20, 12]]]]), sess('2026-10-27', 'z', [['a', []]]),
+    sess('2026-08-10', 'x', [['a', [[50, 10]]]]), sess('2026-01-01', 'x', [['a', [[50, 10]]]])];
+  const g = SM.consistencyGrid(list, '2026-10-28', 12);
+  assert.strictEqual(g.weeks.length, 12);
+  assert.strictEqual(g.weeks[11].weekStart, '2026-10-26');
+  assert.strictEqual(g.weeks[0].weekStart, '2026-08-10');
+  assert.strictEqual(g.weeks[11].days[0].count, 2);
+  assert.strictEqual(g.weeks[11].days[1].count, 0, 'session ไม่มีเซตไม่นับ');
+  assert.strictEqual(g.weeks[0].days[0].count, 1, 'สัปดาห์แรกของหน้าต่างนับ');
+  assert.strictEqual(g.total, 3, 'ก่อนหน้าต่าง 12 สัปดาห์ไม่นับ');
+  assert.strictEqual(g.activeWeeks, 2);
+  assert.ok(g.weeks[11].days[2].isToday && g.weeks[11].days[3].isFuture);
+});
+test('PR ของ session: เทียบเฉพาะท่า+อุปกรณ์เดียวกันที่จบก่อนหน้า, ครั้งแรกไม่ใช่ PR, น้ำหนักเท่าเดิมแต่ reps มากขึ้นนับเป็น 1RM PR', () => {
+  const a = sess('2026-10-01', 'x', [['a', [[50, 10], [50, 8]]]]);
+  const b = sess('2026-10-08', 'x', [['a', [[50, 12]]]]);
+  const c = sess('2026-10-15', 'x', [['a', [[55, 6]]]]);
+  const d = sess('2026-10-22', 'x', [['a', [[45, 10]]], ['b', [[20, 10]]]]);
+  const all = [a, b, c, d];
+  assert.deepStrictEqual(SM.sessionPRs(all, a.id), [], 'ครั้งแรกไม่ใช่ PR');
+  const rb = SM.sessionPRs(all, b.id);
+  assert.strictEqual(rb.length, 1); assert.strictEqual(rb[0].kind, 'e1rm');
+  const rc = SM.sessionPRs(all, c.id);
+  assert.strictEqual(rc[0].kind, 'weight'); assert.strictEqual(rc[0].value, 55); assert.strictEqual(rc[0].prev, 50);
+  assert.deepStrictEqual(SM.sessionPRs(all, d.id), []);
+  const other = Object.assign({}, c, { entries: c.entries.map(function (e) { return Object.assign({}, e, { weightMode: 'cable' }); }) });
+  assert.deepStrictEqual(SM.sessionPRs([a, b, other], other.id), [], 'อุปกรณ์/วิธีนับต่างกันไม่เทียบกัน');
+});
+test('ระยะเวลา session และกล้ามเนื้อที่ได้เซตใน session', () => {
+  assert.strictEqual(SM.durationMin({ startedAt: '2026-10-01T08:00:00Z', finishedAt: '2026-10-01T08:52:30Z' }), 53);
+  assert.strictEqual(SM.durationMin({ startedAt: '2026-10-01T08:00:00Z', finishedAt: '2026-10-02T08:00:00Z' }), null, 'ข้ามวันถือว่าไม่น่าเชื่อถือ');
+  assert.strictEqual(SM.durationMin({ startedAt: '2026-10-01T08:00:00Z' }), null);
+  const w = sess('2026-10-01', 'x', [['a', [[50, 10], [50, 9]]], ['b', [[20, 12]]], ['c', []]]);
+  assert.deepStrictEqual(SM.sessionMuscles(w, exById), [{ muscle: 'อก', sets: 2 }, { muscle: 'ไตรเซ็ป', sets: 1 }]);
+});
+
+/* ================= 1.6: ย้ายข้อมูลชื่อกล้ามเนื้อ + กราฟ ================= */
+const CH = require('../charts.js');
+function oldEx(id, muscle) { return { id: id, name: id, muscle: muscle, equipment: 'เครื่อง', repMin: 8, repMax: 12, step: 5, weightMode: 'machine', subs: [], archived: false }; }
+test('ย้ายชื่อกล้ามเนื้อ: แตะเฉพาะท่า PPL ที่ยังเป็นค่าเดิม, เก็บค่าเดิมไว้ก่อน, ไม่แตะท่าผู้ใช้/ที่ผู้ใช้แก้เอง', () => {
+  const exs = [oldEx('ppl-cable-lateral-raise', 'ไหล่'), oldEx('ppl-reverse-pec-deck', 'ไหล่'), oldEx('ppl-hack-squat', 'ขา'), oldEx('ppl-seated-leg-curl', 'ขา'),
+    oldEx('ppl-leg-press', 'ขาของฉัน'), oldEx('user-1', 'ขา'), oldEx('ppl-cable-curl', 'ไบเซ็ป')];
+  const r = PG.buildMuscleSplit({ exercises: exs, settings: {} });
+  assert.strictEqual(r.changed, 4);
+  const put = {}; r.ops.filter(function (o) { return o.store === 'exercises'; }).forEach(function (o) { put[o.put.id] = o.put; });
+  assert.deepStrictEqual(Object.keys(put).sort(), ['ppl-cable-lateral-raise', 'ppl-hack-squat', 'ppl-reverse-pec-deck', 'ppl-seated-leg-curl']);
+  assert.strictEqual(put['ppl-cable-lateral-raise'].muscle, 'ไหล่ข้าง');
+  assert.strictEqual(put['ppl-reverse-pec-deck'].muscle, 'ไหล่หลัง');
+  assert.strictEqual(put['ppl-hack-squat'].muscle, 'ต้นขาหน้า');
+  assert.strictEqual(put['ppl-seated-leg-curl'].muscle, 'ต้นขาหลัง');
+  assert.strictEqual(exs[0].muscle, 'ไหล่', 'ไม่แก้ object เดิมในหน่วยความจำ');
+  const bk = r.ops.find(function (o) { return o.store === 'settings' && o.put.key === 'muscleSplitBackup'; }).put.value;
+  assert.strictEqual(bk.length, 4);
+  assert.ok(bk.some(function (b) { return b.id === 'ppl-hack-squat' && b.muscle === 'ขา'; }));
+  assert.ok(r.ops.some(function (o) { return o.store === 'settings' && o.put.key === 'muscleSplit'; }));
+  assert.ok(!r.ops.some(function (o) { return o.store === 'workouts'; }), 'ไม่แตะประวัติ');
+  Object.keys(put).forEach(function (id) { const o = exs.find(function (e) { return e.id === id; }); const c = Object.assign({}, put[id], { muscle: o.muscle }); assert.deepStrictEqual(c, o, 'ฟิลด์อื่นเหมือนเดิม ' + id); });
+});
+test('ย้ายชื่อกล้ามเนื้อ: ทำซ้ำได้ปลอดภัย (มีธงแล้วไม่ทำ, force แล้วไม่มีอะไรให้แก้ก็ไม่เขียนท่า)', () => {
+  assert.strictEqual(PG.buildMuscleSplit({ exercises: [oldEx('ppl-hack-squat', 'ขา')], settings: { muscleSplit: 'v1' } }), null);
+  const r = PG.buildMuscleSplit({ exercises: [oldEx('ppl-hack-squat', 'ต้นขาหน้า')], settings: { muscleSplit: 'v1' } }, true);
+  assert.strictEqual(r.changed, 0);
+  assert.ok(!r.ops.some(function (o) { return o.store === 'exercises'; }));
+  assert.ok(!r.ops.some(function (o) { return o.put && o.put.key === 'muscleSplitBackup'; }), 'ไม่เขียนทับสำรองเดิมด้วยค่าว่าง');
+});
+test('ติดตั้งเครื่องใหม่: ท่า PPL ใช้ชื่อกล้ามเนื้อแบบแยกแล้ว และไม่มีท่าไหนเหลือ “ไหล่”/“ขา” เดี่ยว ๆ', () => {
+  const ms = PG.exercises(new Date().toISOString()).map(function (e) { return e.muscle; });
+  assert.ok(ms.indexOf('ไหล่') < 0 && ms.indexOf('ขา') < 0);
+  ['ไหล่ข้าง', 'ไหล่หลัง', 'ต้นขาหน้า', 'ต้นขาหลัง'].forEach(function (m) { assert.ok(ms.indexOf(m) >= 0, m); });
+});
+test('กราฟเส้น: ต้องมี ≥2 จุด, PR เป็นรูปเพชรมีตัวอักษร PR, มี aria-label สรุป, ค่าเท่ากันหมดก็วาดได้', () => {
+  assert.strictEqual(CH.line([{ date: '2026-03-01', value: 50 }]), '');
+  const svg = CH.line([{ date: '2026-03-01', value: 50 }, { date: '2026-03-08', value: 55, pr: true }, { date: '2026-03-15', value: 55 }, { date: '2026-03-29', value: 60, pr: true }], { unit: 'kg', label: 'ทดสอบ', fmtDate: function (k) { return k.slice(5); } });
+  assert.ok(/role="img"/.test(svg) && /aria-label="ทดสอบ: จาก 50 เป็น 60 kg ใน 4 ครั้ง · สถิติใหม่ 2 ครั้ง"/.test(svg), svg.slice(0, 300));
+  assert.strictEqual((svg.match(/class="ch-pr"/g) || []).length, 2);
+  assert.strictEqual((svg.match(/class="ch-dot"/g) || []).length, 2);
+  assert.strictEqual((svg.match(/>PR</g) || []).length, 2);
+  assert.ok(!/NaN|undefined|Infinity/.test(svg));
+  const flat = CH.line([{ date: '2026-03-01', value: 50 }, { date: '2026-03-08', value: 50 }]);
+  assert.ok(flat && !/NaN/.test(flat));
+  const same = CH.line([{ date: '2026-03-01', value: 50 }, { date: '2026-03-01', value: 52 }]);
+  assert.ok(!/NaN/.test(same), 'วันที่ซ้ำกันไม่ทำให้ตำแหน่ง X เป็น NaN');
+});
+
 console.log('\n' + passed + '/' + (passed + failed) + ' ผ่าน');
 process.exit(failed ? 1 : 0);
