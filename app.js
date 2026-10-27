@@ -22,6 +22,7 @@
         if (sub && sub.name === 'plan-view') return V.planView(sub.id);
         if (sub && sub.name === 'done') return V.done(sub.id);
         if (sub && sub.name === 'backup') return V.backup();
+        if (sub && sub.name === 'settings') return V.settings();
         return V.home();
       case 'plans': return sub && sub.name === 'plan-edit' ? V.planEdit() : V.plans();
       case 'exercises': return sub && sub.name === 'ex-edit' ? V.exEdit() : V.exercises();
@@ -35,14 +36,18 @@
 
   function render() {
     const y = window.scrollY;
+    document.body.classList.toggle('in-session', GL.inSession());   // โหมดโฟกัส: ซ่อนแถบเมนูล่างตอนจด
     tabsEl.innerHTML = V.tabs();
     view.innerHTML = pageHtml();
+    if (state.undo) state.undo.fresh = false;                       // แอนิเมชันแถบ Undo เล่นครั้งเดียว
     window.scrollTo(0, y);
+    if (GL.rest) GL.rest.refresh();
+    if (GL.wake) GL.wake.sync();
   }
   GL.render = render;
 
   function top() { window.scrollTo(0, 0); }
-  function inSession() { return state.tab === 'home' && state.sub && state.sub.name === 'session'; }
+  function inSession() { return GL.inSession(); }
 
   // เปลี่ยนหน้า/แท็บ — ตรวจฟอร์มที่ยังไม่บันทึกก่อน และไม่แตะ session ที่ค้าง
   function nav(tab, sub) {
@@ -140,6 +145,7 @@
     catch (e) { GL.toast('ลบไม่สำเร็จ: ' + (e && e.message ? e.message : ''), { error: true }); return false; }
     state.workouts = state.workouts.filter(function (x) { return x.id !== w.id; });
     state.active = null; state.cur = 0; GL.clearUndo(); state.carry = null;
+    if (GL.rest) GL.rest.stop();
     return true;
   }
 
@@ -189,6 +195,7 @@
     const i = state.workouts.findIndex(function (x) { return x.id === w.id; });
     if (i >= 0) state.workouts[i] = fin; else state.workouts.push(fin);
     state.active = null; state.cur = 0; GL.clearUndo(); state.carry = null;
+    if (GL.rest) GL.rest.stop();
     state.lastFinishedId = fin.id;
     state.tab = 'home'; state.sub = { name: 'done', id: fin.id };
     render(); top();
@@ -257,16 +264,26 @@
     try {
       const no = GL.workingRows(entry) + 1;
       const set = { id: S.uid('s'), kind: 'working', status: 'completed', weight: weight, reps: reps, at: new Date().toISOString() };
+      state.justSet = set.id;
       const ok = await commit(w, entry, 'บันทึกเซต ' + no + ' แล้ว: ' + fmtNum(weight) + ' kg × ' + reps, function () {
         entry.sets.push(set);
         if (entry.drafts && entry.drafts.length) entry.drafts.shift();
       });
+      state.justSet = null;
       if (ok) {
+        startRestAfter(entry);
         state.carry = { entryId: entryId, weight: weight, after: -1 };
         const slot = document.getElementById('carry-slot');
         if (slot) slot.innerHTML = V.carryHtml(entry);
       }
     } finally { state.busy = false; }
+  }
+
+  // เริ่มนับเวลาพักหลังยืนยันเซต (ถ้าเปิดไว้ และยังมีเซตเหลือใน session)
+  function startRestAfter(entry) {
+    if (!GL.rest) return;
+    if (GL.setting('restAuto') === false || !state.active || GL.pendingSetsTotal(state.active) === 0) { GL.rest.stop(); return; }
+    GL.rest.start(GL.restFor(GL.exById(entry.exerciseId)));
   }
 
   async function skipSet(entryId) {
@@ -276,6 +293,7 @@
     state.busy = true;
     try {
       const no = GL.workingRows(entry) + 1;
+      if (GL.rest) GL.rest.stop();
       await commit(w, entry, 'ข้ามเซต ' + no + ' แล้ว (ไม่นับเป็นล้มเหลว)', function () {
         entry.sets.push({ id: S.uid('s'), kind: 'working', status: 'skipped', weight: null, reps: null, at: new Date().toISOString() });
         if (entry.drafts && entry.drafts.length) entry.drafts.shift();
@@ -380,14 +398,18 @@
 
   /* ----- ท่าทางเลือก (เฉพาะวันนี้) / เพิ่มท่า ----- */
 
-  async function swapTo(entryId, exId) {
+  // mode: 'rest' (ค่าเริ่มต้น: เซตที่จดแล้วคงไว้ เซตที่เหลือไปท่าใหม่) | 'fix' (จดผิดท่า: ย้ายเซตที่จดแล้วไปเป็นท่าใหม่)
+  async function swapTo(entryId, exId, mode) {
     const w = state.active, entry = activeEntry(entryId), ex = GL.exById(exId);
     if (!entry || !ex || ex.id === entry.exerciseId) { GL.closeSheet(); return; }
     const beforeEntries = clone(w.entries), beforeCur = state.cur;
     const hadSets = GL.completedAny(entry).length > 0;
-    if (!hadSets) {
+    const fix = mode === 'fix';
+    if (!hadSets || fix) {
+      // เปลี่ยนชื่อท่าของแถวนี้ทั้งแถว (เซตที่จดไว้แล้วคงน้ำหนัก/reps เดิม)
       entry.exerciseId = ex.id; entry.exerciseName = ex.name; entry.equipment = ex.equipment; entry.weightMode = ex.weightMode;
-      entry.drafts = []; entry.draft = null;
+      if (!fix) entry.drafts = [];
+      entry.draft = null;
       entry.target = GL.slimTarget(P.suggestTarget(state.workouts, entry, ex, w.id));
     } else {
       // เก็บผลของท่าเดิมไว้ และเปิดท่าใหม่สำหรับเซตที่เหลือ (ไม่แปลงชื่อผลเก่าเป็นท่าใหม่)
@@ -405,23 +427,142 @@
     try { await GL.saveWorkout(w); }
     catch (e) { w.entries = beforeEntries; state.cur = beforeCur; GL.setUndo({ label: 'บันทึกไม่สำเร็จ ลองอีกครั้ง', error: true }); render(); return; }
     GL.setUndo({
-      label: 'เปลี่ยนเป็น ' + ex.name + ' เฉพาะวันนี้ (แผนหลักไม่เปลี่ยน)',
+      label: fix && hadSets ? 'ย้ายเซตที่จดไว้ไปเป็น ' + ex.name + ' แล้ว' : 'เปลี่ยนเป็น ' + ex.name + ' เฉพาะวันนี้ (แผนหลักไม่เปลี่ยน)',
       fn: async function () { w.entries = beforeEntries; state.cur = beforeCur; try { await GL.saveWorkout(w); } catch (e) { /* ignore */ } GL.clearUndo(); render(); }
     });
     state.carry = null;
     render(); top();
   }
 
+  // เพิ่มท่าเข้า session: วางต่อจากท่าที่กำลังดู แล้วพาไปที่ท่านั้นเลย
   async function addExercise(exId) {
     const w = state.active, ex = GL.exById(exId);
     if (!w || !ex) return;
-    const entry = GL.makeEntry(ex, 3, null, w.id);
-    w.entries.push(entry);
+    const beforeEntries = clone(w.entries), beforeCur = state.cur;
+    const entry = GL.makeEntry(ex, state.addSets || 3, null, w.id);
+    const at = w.entries.length ? Math.min(state.cur, w.entries.length - 1) + 1 : 0;
+    w.entries.splice(at, 0, entry);
     GL.closeSheet();
-    try { await GL.saveWorkout(w); } catch (e) { w.entries.pop(); GL.setUndo({ label: 'บันทึกไม่สำเร็จ ลองอีกครั้ง', error: true }); render(); return; }
-    state.cur = w.entries.length - 1;
-    GL.setUndo({ label: 'เพิ่ม ' + ex.name + ' ใน session แล้ว', fn: async function () { w.entries = w.entries.filter(function (e) { return e.id !== entry.id; }); state.cur = Math.max(0, w.entries.length - 1); try { await GL.saveWorkout(w); } catch (e) { /* ignore */ } GL.clearUndo(); render(); } });
+    try { await GL.saveWorkout(w); }
+    catch (e) { w.entries = beforeEntries; state.cur = beforeCur; GL.setUndo({ label: 'บันทึกไม่สำเร็จ ลองอีกครั้ง', error: true }); render(); return; }
+    state.cur = at; state.carry = null;
+    GL.setUndo({
+      label: 'เพิ่ม ' + ex.name + ' ใน session แล้ว',
+      fn: async function () { w.entries = beforeEntries; state.cur = beforeCur; try { await GL.saveWorkout(w); } catch (e) { /* ignore */ } GL.clearUndo(); render(); }
+    });
     render(); top();
+  }
+
+  // ลบท่าออกจาก session (รวมเซตที่จดไว้ในท่านั้น) — ย้อนกลับได้ทันที
+  async function removeEntry(entryId) {
+    const w = state.active, entry = activeEntry(entryId);
+    GL.closeSheet();
+    if (!w || !entry) return;
+    const beforeEntries = clone(w.entries), beforeCur = state.cur;
+    const at = w.entries.indexOf(entry), name = entry.exerciseName;
+    w.entries.splice(at, 1);
+    state.cur = Math.max(0, Math.min(at, w.entries.length - 1));
+    try { await GL.saveWorkout(w); }
+    catch (e) { w.entries = beforeEntries; state.cur = beforeCur; GL.setUndo({ label: 'ลบไม่สำเร็จ ลองอีกครั้ง', error: true }); render(); return; }
+    GL.setUndo({
+      label: 'ลบ ' + name + ' ออกจาก session แล้ว',
+      fn: async function () { w.entries = beforeEntries; state.cur = beforeCur; try { await GL.saveWorkout(w); } catch (e) { /* ignore */ } GL.clearUndo(); render(); }
+    });
+    state.carry = null;
+    render(); top();
+  }
+
+  /* ----- สร้างท่าแบบเร็ว (ในหน้าจด / เปลี่ยนท่า / แก้แผน) ----- */
+
+  function openQuickEx(ctx, d) {
+    const w = state.active;
+    let ref = null;
+    if (ctx === 'session' || ctx === 'swap') {
+      const e = ctx === 'swap' && d.entry ? activeEntry(d.entry) : (w && w.entries[state.cur]);
+      ref = e ? GL.exById(e.exerciseId) : null;
+    } else if (ctx === 'plan' && state.sub && state.sub.draft && state.sub.draft.items.length) {
+      ref = GL.exById(state.sub.draft.items[state.sub.draft.items.length - 1].exerciseId);
+    }
+    const qEl = document.getElementById('pick-q');
+    let key = 0;
+    if (ref) {
+      const byLabel = GL.QX_EQUIP.findIndex(function (e) { return e[0] === ref.equipment; });
+      const byMode = GL.QX_EQUIP.findIndex(function (e) { return e[1] === ref.weightMode; });
+      key = byLabel >= 0 ? byLabel : Math.max(0, byMode);
+    }
+    GL.sheetCtx = {
+      type: 'qx', ctx: ctx, entryId: d.entry || null, mode: d.mode || 'rest',
+      qx: { name: qEl ? qEl.value.trim() : '', muscle: ref ? (ref.muscle || '') : '', equipKey: key, equipment: ref ? (ref.equipment || GL.QX_EQUIP[key][0]) : GL.QX_EQUIP[key][0], refId: ref ? ref.id : null }
+    };
+    GL.openSheet(V.quickExSheet());
+    const nm = document.getElementById('qx-name');
+    if (nm && !GL.sheetCtx.qx.name) { try { nm.focus(); } catch (e) { /* ignore */ } }
+  }
+
+  function qxPick(kind, v, btn) {
+    const c = GL.sheetCtx;
+    if (!c || c.type !== 'qx') return;
+    if (kind === 'muscle') {
+      c.qx.muscle = v;
+      document.querySelectorAll('#qx-muscles .chip').forEach(function (b) { const on = b === btn; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
+    } else {
+      c.qx.equipKey = v; c.qx.equipment = GL.QX_EQUIP[v][0];
+      const inp = document.getElementById('qx-equip-text'); if (inp) inp.value = c.qx.equipment;
+      document.querySelectorAll('#qx-equips .chip').forEach(function (b) { const on = b === btn; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
+    }
+    const hint = document.getElementById('qx-hint'); if (hint) hint.textContent = GL.qxHint(c.qx);
+  }
+
+  async function saveQuickEx() {
+    const c = GL.sheetCtx;
+    if (!c || c.type !== 'qx') return;
+    const q = c.qx, name = String(q.name || '').trim();
+    if (!name) { GL.toast('ใส่ชื่อท่าก่อน', { error: true }); const el = document.getElementById('qx-name'); if (el) el.focus(); return; }
+    const lower = name.toLowerCase();
+    if (state.exercises.some(function (e) { return String(e.name).trim().toLowerCase() === lower; })) {
+      GL.toast('มีท่าชื่อ “' + name + '” อยู่แล้ว (รวมท่าที่เก็บเข้าคลัง) เลือกจากรายการแทน', { error: true }); return;
+    }
+    const dflt = GL.qxDefaults(q, GL.exById(q.refId));
+    const eq = GL.QX_EQUIP[q.equipKey] || GL.QX_EQUIP[0];
+    const rec = {
+      id: S.uid('ex'), name: name.slice(0, 120), muscle: String(q.muscle || '').trim().slice(0, 60) || 'อื่น ๆ',
+      equipment: String(q.equipment || '').trim().slice(0, 80) || eq[0],
+      repMin: dflt.repMin, repMax: dflt.repMax, step: dflt.step, weightMode: dflt.weightMode,
+      subs: [], archived: false, isSample: false, createdAt: new Date().toISOString()
+    };
+    if (dflt.icon && GL.I.EX_KEYS.indexOf(dflt.icon) >= 0) rec.icon = dflt.icon;
+    try { await S.put('exercises', rec); }
+    catch (e) { GL.toast('สร้างท่าไม่สำเร็จ: ' + (e && e.message ? e.message : ''), { error: true }); return; }
+    state.exercises.push(rec);
+    if (c.ctx === 'swap') { await swapTo(c.entryId, rec.id, c.mode); GL.toast('สร้างท่า “' + rec.name + '” แล้ว'); return; }
+    if (c.ctx === 'plan') {
+      if (state.sub && state.sub.draft) { state.sub.draft.items.push({ exerciseId: rec.id, sets: 3 }); state.sub.dirty = true; }
+      GL.closeSheet(); render(); GL.toast('สร้างท่า “' + rec.name + '” และเพิ่มเข้าแผนแล้ว (ยังไม่ได้กดบันทึกแผน)');
+      return;
+    }
+    await addExercise(rec.id);
+  }
+
+  /* ----- ตั้งค่า ----- */
+
+  async function saveSetting(key, value) {
+    const prev = state.settings[key];
+    state.settings[key] = value;
+    try { await S.setSetting(key, value); }
+    catch (e) { state.settings[key] = prev; GL.toast('บันทึกการตั้งค่าไม่สำเร็จ', { error: true }); }
+    render();
+  }
+
+  function applyCustomRest(input) {
+    const t = String(input.value).trim();
+    const n = Number(t);
+    if (!/^\d+$/.test(t) || n < 10 || n > 900) {
+      GL.toast('ใส่เวลาพักเป็นวินาที 10–900', { error: true });
+      input.value = GL.setting('restSeconds');
+      return;
+    }
+    if (state.sub) state.sub.customRest = !GL.REST_PRESETS.includes(n);
+    saveSetting('restSeconds', n);
   }
 
   function goEntry(i) {
@@ -437,12 +578,12 @@
   /* ---------- ท่า (Exercises) ---------- */
 
   function newExDraft() {
-    return { id: null, name: '', muscle: '', equipment: '', repMin: '8', repMax: '12', step: '2.5', weightMode: 'machine', subs: [], icon: '', note: '', hadHistory: false };
+    return { id: null, name: '', muscle: '', equipment: '', repMin: '8', repMax: '12', step: '2.5', restSec: '', weightMode: 'machine', subs: [], icon: '', note: '', hadHistory: false };
   }
   function exToDraft(e) {
     return {
       id: e.id, name: e.name, muscle: e.muscle || '', equipment: e.equipment || '',
-      repMin: String(e.repMin), repMax: String(e.repMax), step: fmtNum(e.step), weightMode: e.weightMode,
+      repMin: String(e.repMin), repMax: String(e.repMax), step: fmtNum(e.step), restSec: e.restSec ? String(e.restSec) : '', weightMode: e.weightMode,
       subs: (e.subs || []).slice(), icon: e.icon || '', note: e.note || '', hadHistory: GL.exerciseHasHistory(e.id)
     };
   }
@@ -464,6 +605,12 @@
     const step = GL.parseWeight(d.step);
     if (step === null || isNaN(step) || step <= 0 || step > 500) return bad('น้ำหนักที่เพิ่มต่อขั้นต้องมากกว่า 0');
     if (GL.WEIGHT_MODE_ORDER.indexOf(d.weightMode) < 0) return bad('เลือกวิธีนับน้ำหนัก');
+    let restSec = null;
+    const rs = String(d.restSec || '').trim();
+    if (rs !== '') {
+      if (!/^\d+$/.test(rs) || Number(rs) < 10 || Number(rs) > 900) return bad('เวลาพักต้องเป็นเลขเต็ม 10–900 วินาที (หรือเว้นว่างเพื่อใช้ค่ากลาง)');
+      restSec = Number(rs);
+    }
 
     const existing = d.id ? GL.exById(d.id) : null;
     const id = d.id || S.uid('ex');
@@ -479,6 +626,7 @@
     };
     if (d.icon && GL.I.EX_KEYS.indexOf(d.icon) >= 0) rec.icon = d.icon;
     if (d.note && d.note.trim()) rec.note = d.note.trim().slice(0, 300);
+    if (restSec) rec.restSec = restSec;
     try { await S.put('exercises', rec); } catch (e) { return bad('บันทึกไม่สำเร็จ: ' + (e && e.message ? e.message : '')); }
     if (existing) {
       Object.keys(existing).forEach(function (k) { delete existing[k]; });
@@ -728,8 +876,11 @@
 
   function showUpdateBanner(reg) {
     const b = document.getElementById('update-banner');
-    b.innerHTML = '<div class="row"><span>มีเวอร์ชันใหม่ — ข้อมูลที่บันทึกแล้วไม่หาย กดอัปเดตเมื่อสะดวก</span>' +
-      '<button type="button" data-action="update-apply">อัปเดตตอนนี้</button></div>';
+    const lb = state.settings.lastBackupAt;
+    const stale = GL.finishedWorkouts().length > 0 && (!lb || Date.now() - new Date(lb).getTime() > 3 * 86400000);
+    b.innerHTML = '<div class="row"><span>มีเวอร์ชันใหม่ — ข้อมูลที่บันทึกแล้วไม่หาย กดอัปเดตเมื่อสะดวก' + (stale ? ' · แนะนำสำรองข้อมูลก่อน' : '') + '</span>' +
+      '<div class="b-btns">' + (stale ? '<button type="button" class="alt" data-action="update-backup">สำรองก่อน</button>' : '') +
+      '<button type="button" data-action="update-apply">อัปเดตตอนนี้</button></div></div>';
     b.hidden = false; b._reg = reg;
   }
   function applyUpdate() {
@@ -804,6 +955,15 @@
       case 'conflict-keep': startSession(state.pendingStart, 'keep'); break;
       case 'conflict-discard': GL.openSheet(V.discardConfirmSheet(true)); break;
       case 'open-backup': nav('home', { name: 'backup' }); break;
+      case 'open-settings': nav('home', { name: 'settings' }); break;
+      case 'set-toggle': saveSetting(d.key, !GL.setting(d.key)); break;
+      case 'set-rest': if (state.sub) state.sub.customRest = false; saveSetting('restSeconds', Number(d.v)); break;
+      case 'set-rest-custom': if (state.sub) state.sub.customRest = true; render(); { const i = document.getElementById('rest-custom'); if (i) { i.focus(); i.select(); } } break;
+      case 'hint-seen': saveSetting('hintSug', 'seen'); break;
+      case 'rest-skip': if (GL.rest) GL.rest.stop(); break;
+      case 'rest-minus': if (GL.rest) GL.rest.adjust(-15); break;
+      case 'rest-plus': if (GL.rest) GL.rest.adjust(15); break;
+      case 'update-backup': doExport(); break;
       case 'dismiss-notice':
         delete state.settings.programNotice;
         S.del('settings', 'programNotice').catch(function () { });
@@ -813,7 +973,7 @@
       case 'ex-next': goEntry(state.cur + 1); break;
       case 'ex-go': GL.closeSheet(); goEntry(Number(d.i)); break;
       case 'ex-list': if (state.active) GL.openSheet(V.exListSheet()); break;
-      case 'confirm-set': confirmSet(d.entry, d.pending); break;
+      case 'confirm-set': if (GL.rest) GL.rest.unlock(); confirmSet(d.entry, d.pending); break;
       case 'skip-set': skipSet(d.entry); break;
       case 'more-set': moreSet(d.entry); break;
       case 'add-warmup': openWarmup(d.entry); break;
@@ -830,10 +990,30 @@
         break;
       case 'es-save': saveEditedSet(); break;
       case 'es-delete': deleteEditedSet(); break;
-      case 'swap': GL.openSheet(V.swapSheet(d.entry)); break;
-      case 'swap-pick': swapTo(d.entry, d.ex); break;
+      case 'swap': GL.sheetCtx = { type: 'swap', entryId: d.entry, mode: 'rest' }; GL.openSheet(V.swapSheet(d.entry)); break;
+      case 'swap-fix': GL.sheetCtx = { type: 'swap', entryId: d.entry, mode: 'fix' }; GL.openSheet(V.swapSheet(d.entry)); break;
+      case 'swap-mode': if (GL.sheetCtx && GL.sheetCtx.type === 'swap') { GL.sheetCtx.mode = d.mode; GL.openSheet(V.swapSheet(GL.sheetCtx.entryId)); } break;
+      case 'swap-pick': swapTo(d.entry, d.ex, d.mode); break;
+      case 'entry-menu': GL.openSheet(V.entrySheet(d.entry)); break;
+      case 'entry-remove-ask': {
+        const en = activeEntry(d.entry);
+        if (!en) { GL.closeSheet(); break; }
+        if (GL.completedAny(en).length === 0) removeEntry(d.entry); else GL.openSheet(V.removeEntrySheet(d.entry));
+        break;
+      }
+      case 'entry-remove-confirm': removeEntry(d.entry); break;
+      case 'add-sets': {
+        state.addSets = Math.min(10, Math.max(1, state.addSets + Number(d.dir)));
+        const el = document.getElementById('add-sets-val'); if (el) el.innerHTML = '<b>' + state.addSets + '</b> เซต';
+        break;
+      }
+      case 'qx-open': openQuickEx(d.ctx, d); break;
+      case 'qx-muscle': qxPick('muscle', d.v, t); break;
+      case 'qx-equip': qxPick('equip', Number(d.i), t); break;
+      case 'qx-save': saveQuickEx(); break;
+      case 'qx-cancel': GL.closeSheet(); break;
       case 'ex-history': GL.openSheet(V.exHistorySheet(d.entry)); break;
-      case 'add-ex': GL.openSheet(V.addExSheet()); break;
+      case 'add-ex': state.addSets = 3; GL.openSheet(V.addExSheet()); break;
       case 'add-ex-pick': addExercise(d.ex); break;
       case 'pick-muscle': {
         const root = t.closest('.sheet') || document;
@@ -937,6 +1117,7 @@
       dropUndo();
       return;
     }
+    if (t.dataset.qx && GL.sheetCtx && GL.sheetCtx.type === 'qx') { GL.sheetCtx.qx[t.dataset.qx] = t.value; return; }
     if (t.dataset.filter === 'pick') { applyPickFilter(t.closest('.sheet') || document); return; }
     if (t.dataset.filter === 'exlist') {
       state.exQuery = t.value;
@@ -962,6 +1143,7 @@
       if (slot) slot.innerHTML = V.carryHtml(entry);
       return;
     }
+    if (t && t.id === 'rest-custom') { applyCustomRest(t); return; }
     onFormInput(ev);
   });
 
@@ -1004,15 +1186,25 @@
     window.visualViewport.addEventListener('scroll', updateKb);
   }
   kbBar.addEventListener('pointerdown', function (e) { e.preventDefault(); });
+  let scrollTimer = null;
   document.addEventListener('focusin', function (ev) {
     const t = ev.target;
     if (t && t.classList && t.classList.contains('st-in')) {
-      setTimeout(function () { try { t.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) { /* ignore */ } }, 250);
+      // เลื่อนเฉพาะเมื่อช่องถูกบัง/อยู่ชิดขอบ — ไม่ขยับหน้าจอโดยไม่จำเป็น (กันปุ่มวิ่งหนีนิ้วตอนกดยืนยันเร็ว ๆ)
+      clearTimeout(scrollTimer);
+      scrollTimer = setTimeout(function () {
+        try {
+          if (document.activeElement !== t) return;
+          const vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+          const r = t.getBoundingClientRect();
+          if (r.top < 90 || r.bottom > vh - 140) t.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        } catch (e) { /* ignore */ }
+      }, 250);
       if (t.select) { try { t.select(); } catch (e) { /* ignore */ } }
     }
     updateKb();
   });
-  document.addEventListener('focusout', function () { setTimeout(updateKb, 60); });
+  document.addEventListener('focusout', function () { clearTimeout(scrollTimer); setTimeout(updateKb, 60); });
 
   document.getElementById('import-file').addEventListener('change', function (ev) {
     const f = ev.target.files && ev.target.files[0];

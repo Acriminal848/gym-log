@@ -33,7 +33,8 @@
 
   /* ---------- หน้าแรก ---------- */
   V.home = function () {
-    let h = '<h1>Gym Log</h1><p class="sub">' + esc(GL.fmtDate(GL.localDateKey(), true)) + '</p>';
+    let h = '<div class="page-title"><h1>Gym Log</h1><button type="button" class="iconbtn quiet" data-action="open-settings" aria-label="ตั้งค่า">' + ico('settings', 24) + '</button></div>' +
+      '<p class="sub">' + esc(GL.fmtDate(GL.localDateKey(), true)) + '</p>';
 
     const note = state.settings.programNotice;
     if (note) {
@@ -110,7 +111,7 @@
   function undoStrip() {
     const u = state.undo;
     if (!u) return '';
-    return '<div class="undo-strip' + (u.error ? ' error' : '') + '" role="status"><span>' + esc(u.label) + '</span>' +
+    return '<div class="undo-strip' + (u.error ? ' error' : '') + (u.fresh ? ' new' : '') + '" role="status"><span>' + esc(u.label) + '</span>' +
       (u.fn ? '<button type="button" data-action="undo">' + ico('undo', 18) + 'ย้อนกลับ</button>' : '') + '</div>';
   }
   V.undoStrip = undoStrip;
@@ -135,7 +136,7 @@
     const n = GL.sessionSetCount(w);
     let h = '<div class="s-head"><button type="button" class="back btn ghost small" style="padding:0 8px 0 2px" data-action="home">' + ico('back', 24) + 'หน้าแรก</button>' +
       '<div class="s-title">' + esc(w.planName) + '<small>' + (n ? 'จดแล้ว ' + n + ' เซต' : 'ยังไม่มีเซตที่บันทึก') + '</small></div>' +
-      '<button type="button" class="btn small" data-action="manage">' + ico('more', 20) + 'จัดการ</button></div>';
+      '<button type="button" class="btn small quiet" data-action="manage">' + ico('more', 20) + 'จัดการ</button></div>';
 
     if (!w.entries.length) {
       h += '<div class="strip-slot">' + undoStrip() + '</div>';
@@ -166,8 +167,9 @@
       (swapped ? '<div style="margin-top:4px"><span class="tag lav">ท่าทางเลือกวันนี้ · แทน ' + esc(entry.plannedExerciseName || '') + '</span></div>' : '') +
       '</div></div>';
     if (ex && ex.note) h += '<div class="ex-note">' + ico('info', 18) + '<span>' + esc(ex.note) + '</span></div>';
-    h += '<div class="ex-actions"><button type="button" class="btn" data-action="swap" data-entry="' + id + '">' + ico('swap', 20) + 'ท่าทางเลือก</button>' +
-      '<button type="button" class="btn" data-action="ex-history" data-entry="' + id + '">' + ico('history', 20) + 'ประวัติท่านี้</button></div>';
+    h += '<div class="ex-actions"><button type="button" class="btn quiet" data-action="swap" data-entry="' + id + '">' + ico('swap', 20) + 'เปลี่ยนท่า</button>' +
+      '<button type="button" class="btn quiet" data-action="ex-history" data-entry="' + id + '">' + ico('history', 20) + 'ประวัติท่านี้</button>' +
+      '<button type="button" class="iconbtn quiet" data-action="entry-menu" data-entry="' + id + '" aria-label="จัดการท่านี้">' + ico('more', 22) + '</button></div>';
 
     // เป้าหมายวันนี้ (เหนือทั้งตาราง ไม่ซ้ำทุกแถว)
     const prev = P.findPrevious(state.workouts, entry, w.id);
@@ -210,8 +212,8 @@
 
     if (st.pend === 0 && GL.completedAny(entry).length) {
       h += '<div class="done-note">' + ico('check', 22) + 'ครบ ' + st.done + ' เซตของท่านี้แล้ว</div>';
-      if (!isLast) h += '<button type="button" class="btn primary cta-next" data-action="ex-next">ท่าถัดไป' + ico('chevron', 22) + '</button>';
-      else h += '<button type="button" class="btn primary cta-next" data-action="finish">จบและเก็บผลการฝึก</button>';
+      if (!isLast) h += '<div class="sticky-cta"><button type="button" class="btn primary cta-next" data-action="ex-next">ท่าถัดไป' + ico('chevron', 22) + '</button></div>';
+      else h += '<div class="sticky-cta"><button type="button" class="btn primary cta-next" data-action="finish">จบและเก็บผลการฝึก</button></div>';
     }
     h += '</section>';
     return h;
@@ -254,17 +256,19 @@
           '<span class="st-n">' + wi + '</span><span class="st-prev">' + esc(prevTxt) + '</span><button type="button" class="st-val st-skiptxt" style="grid-column:4 / span 2;font-size:17px" ' + ed + '>ข้ามเซตนี้ · แตะเพื่อแก้</button></div>';
         return;
       }
-      h += '<div class="st-row done"><button type="button" class="cf done" ' + ed + ' aria-label="เซต ' + wi + ' บันทึกแล้ว แตะเพื่อแก้">' + ico('check', 24) + '</button>' +
+      h += '<div class="st-row done' + (state.justSet === s.id ? ' just' : '') + '"><button type="button" class="cf done" ' + ed + ' aria-label="เซต ' + wi + ' บันทึกแล้ว แตะเพื่อแก้">' + ico('check', 24) + '</button>' +
         '<span class="st-n">' + wi + '</span><span class="st-prev">' + esc(prevTxt) + '</span>' +
         '<button type="button" class="st-val" ' + ed + '>' + esc(fmtNum(s.weight)) + '</button><button type="button" class="st-val" ' + ed + '>' + esc(s.reps) + '</button></div>';
     });
     const pend = GL.pendingCount(entry);
+    let hasSug = false;
     for (let p = 0; p < pend; p++) {
       const no = wi + 1 + p;
       const pv = prevSets[no - 1];
       const prevTxt = pv ? fmtNum(pv.weight) + ' × ' + pv.reps : '—';
       const d = GL.draftOf(entry, p);
       const cur = p === 0;
+      if ((!d.weightTouched && d.weight !== '') || (!d.repsTouched && d.reps !== '')) hasSug = true;
       h += '<div class="st-row" data-pending-row="' + p + '"><button type="button" class="cf ' + (cur ? 'cur' : 'later') + '" data-action="confirm-set" data-entry="' + id + '" data-pending="' + p + '"' +
         (cur ? '' : ' aria-disabled="true"') + ' aria-label="' + (cur ? 'ยืนยันเซต ' + no : 'เซต ' + no + ' ยืนยันได้หลังเซตก่อนหน้า') + '"></button>' +
         '<span class="st-n">' + no + '</span><span class="st-prev">' + esc(prevTxt) + '</span>' +
@@ -272,7 +276,11 @@
         '<input type="text" inputmode="numeric" pattern="[0-9]*" enterkeyhint="done" autocomplete="off" class="st-in' + (d.repsTouched ? '' : ' sug') + '" data-entry="' + id + '" data-pending="' + p + '" data-field="reps" value="' + esc(d.reps) + '" placeholder="reps" aria-label="reps เซต ' + no + '"></div>';
     }
     if (!entry.sets.length && !pend) h += '<p class="muted small" style="padding:8px 0">ไม่มีแถวเซต — กด “เพิ่มเซต”</p>';
-    h += '</div><p class="hint">ตัวเลขสีเทาคือค่าที่เสนอไว้ ยังไม่นับเป็นผลจนกว่าจะกดวงกลมยืนยัน</p>';
+    h += '</div>';
+    if (hasSug && state.settings.hintSug !== 'seen') {
+      h += '<div class="hint-row"><p class="hint">ตัวเลขสีเทาคือค่าที่เสนอไว้ ยังไม่นับเป็นผลจนกว่าจะกดวงกลมยืนยัน</p>' +
+        '<button type="button" class="btn small quiet" data-action="hint-seen">เข้าใจแล้ว</button></div>';
+    }
     return h;
   }
 
@@ -378,13 +386,20 @@
     }
     h += '<div id="pick-list">';
     list.forEach(function (e) { h += pickRow(action, attrsFor(e), e, opts.subText ? opts.subText(e) : null); });
-    h += '</div><p class="muted small" id="pick-empty" hidden>ไม่พบท่าที่ตรงกับที่ค้นหา</p>';
+    h += '</div><div id="pick-empty" hidden><p class="muted small">ไม่พบท่าที่ตรงกับที่ค้นหา</p>' +
+      (opts.createCtx ? '<button type="button" class="btn" data-action="qx-open" data-ctx="' + esc(opts.createCtx) + '"' + (opts.createAttrs || '') + '>' + ico('plus', 20) + 'สร้างเป็นท่าใหม่</button>' : '') + '</div>';
     return h;
   };
 
   V.addExSheet = function () {
     const list = state.exercises.filter(function (e) { return !e.archived; }).sort(GL.byName);
-    return '<h3>เพิ่มท่าใน session นี้</h3>' + V.pickerList('add-ex-pick', function (e) { return 'data-ex="' + esc(e.id) + '"'; }, list) +
+    return '<h3>เพิ่มท่าใน session นี้</h3><p class="muted small">วางต่อจากท่าที่กำลังดู และพาไปที่ท่านั้นทันที</p>' +
+      '<div class="stepper-row"><span class="sr-lbl">จำนวนเซต</span><div class="mini-stepper">' +
+      '<button type="button" data-action="add-sets" data-dir="-1" aria-label="ลดจำนวนเซต">' + ico('minus', 18) + '</button>' +
+      '<span id="add-sets-val"><b>' + state.addSets + '</b> เซต</span>' +
+      '<button type="button" data-action="add-sets" data-dir="1" aria-label="เพิ่มจำนวนเซต">' + ico('plus', 18) + '</button></div></div>' +
+      '<button type="button" class="btn primary create-cta" data-action="qx-open" data-ctx="session">' + ico('plus', 20) + 'สร้างท่าใหม่ (ไม่มีในรายการ)</button>' +
+      V.pickerList('add-ex-pick', function (e) { return 'data-ex="' + esc(e.id) + '"'; }, list, { createCtx: 'session' }) +
       '<div class="btn-row"><button type="button" class="btn" data-action="close-sheet">ปิด</button></div>';
   };
 
@@ -392,6 +407,8 @@
     const w = state.active, entry = GL.findEntry(w, entryId);
     const cur = GL.exById(entry.exerciseId);
     const planned = entry.plannedExerciseId ? GL.exById(entry.plannedExerciseId) : null;
+    const ctx = GL.sheetCtx && GL.sheetCtx.type === 'swap' ? GL.sheetCtx : { mode: 'rest' };
+    const mode = ctx.mode === 'fix' ? 'fix' : 'rest';
     const seen = {}; seen[entry.exerciseId] = true;
     const subIds = [];
     if (planned && !seen[planned.id]) { subIds.push(planned.id); seen[planned.id] = true; }
@@ -399,17 +416,28 @@
       const e = GL.exById(id);
       if (!seen[id] && e && !e.archived) { subIds.push(id); seen[id] = true; }
     });
-    const hasSets = GL.completedAny(entry).length > 0;
-    let h = '<h3>ท่าทางเลือกแทน ' + esc(entry.exerciseName) + '</h3>' +
-      '<p><span class="tag lav">เฉพาะวันนี้</span> <span class="muted small">ไม่แก้แผนหลัก</span></p>' +
-      '<p class="hint">ใช้ประวัติของท่าที่เลือกเท่านั้น ไม่ย้ายเป้าหมายน้ำหนักจากท่าเดิม' +
-      (hasSets ? ' · ผลที่จดไปแล้วของท่าเดิมจะคงไว้ และจะจดท่าใหม่สำหรับเซตที่เหลือ' : '') + '</p>';
+    const doneN = GL.completedAny(entry).length, pend = GL.pendingCount(entry);
+    const hasSets = doneN > 0;
+    const attrsMode = ' data-mode="' + mode + '"';
+    let h = '<h3>เปลี่ยนท่า · ' + esc(entry.exerciseName) + '</h3>';
+    if (hasSets) {
+      h += '<div class="seg mode-seg" role="tablist">' +
+        '<button type="button" role="tab" data-action="swap-mode" data-mode="rest" aria-selected="' + (mode === 'rest') + '" class="' + (mode === 'rest' ? 'on' : '') + '">เปลี่ยนเฉพาะเซตที่เหลือ</button>' +
+        '<button type="button" role="tab" data-action="swap-mode" data-mode="fix" aria-selected="' + (mode === 'fix') + '" class="' + (mode === 'fix' ? 'on' : '') + '">จดผิดท่า · แก้ที่จดไปแล้ว</button></div>';
+      h += mode === 'fix'
+        ? '<p class="hint">ย้ายเซตที่จดไว้แล้ว <b>' + doneN + ' เซต</b> (น้ำหนักและ reps เดิมคงอยู่) ไปเป็นท่าที่เลือก — ใช้เมื่อจดลงผิดท่า</p>'
+        : '<p class="hint">เซตที่จดไว้ ' + doneN + ' เซตของ “' + esc(entry.exerciseName) + '” คงไว้ตามเดิม · เซตที่เหลือ ' + (pend > 0 ? pend : (entry.plannedSets || 3)) + ' เซตจะไปจดกับท่าที่เลือก (ใช้ประวัติของท่านั้น ไม่ย้ายเป้าหมายข้ามท่า)</p>';
+    } else {
+      h += '<p><span class="tag lav">เฉพาะวันนี้</span> <span class="muted small">ไม่แก้แผนหลัก</span></p>' +
+        '<p class="hint">ใช้ประวัติของท่าที่เลือกเท่านั้น ไม่ย้ายเป้าหมายน้ำหนักจากท่าเดิม</p>';
+    }
     function opt(e) {
       const lp = GL.lastPlayed(e.id, e.equipment, e.weightMode);
       const sub = (e.equipment || '') + ' · นับ ' + modeShort(e.weightMode) + ' · ' +
         (lp ? 'เล่นล่าสุด ' + GL.fmtShort(lp.date) + (lp.sameBasis ? '' : ' (คนละอุปกรณ์)') : 'ยังไม่เคยเล่น (ช่องน้ำหนักจะว่าง)');
-      return pickRow('swap-pick', 'data-entry="' + esc(entryId) + '" data-ex="' + esc(e.id) + '"', e, sub);
+      return pickRow('swap-pick', 'data-entry="' + esc(entryId) + '" data-ex="' + esc(e.id) + '"' + attrsMode, e, sub);
     }
+    h += '<button type="button" class="btn create-cta" data-action="qx-open" data-ctx="swap" data-entry="' + esc(entryId) + '"' + attrsMode + '>' + ico('plus', 20) + 'สร้างท่าใหม่แล้วใช้ท่านั้นเลย</button>';
     if (subIds.length) {
       h += '<div class="field-lbl">ท่าทางเลือกที่ตั้งไว้</div>' + subIds.map(function (id) { return opt(GL.exById(id)); }).join('');
     } else {
@@ -418,11 +446,78 @@
     const others = state.exercises.filter(function (e) { return !e.archived && !seen[e.id]; }).sort(GL.byName);
     if (others.length) {
       h += '<details' + (subIds.length ? '' : ' open') + '><summary>เลือกจากคลังท่าทั้งหมด (' + others.length + ')</summary>' +
-        V.pickerList('swap-pick', function (e) { return 'data-entry="' + esc(entryId) + '" data-ex="' + esc(e.id) + '"'; }, others, {
-          subText: function (e) { return (e.muscle || '') + ' · ' + (e.equipment || ''); }
+        V.pickerList('swap-pick', function (e) { return 'data-entry="' + esc(entryId) + '" data-ex="' + esc(e.id) + '"' + attrsMode; }, others, {
+          subText: function (e) { return (e.muscle || '') + ' · ' + (e.equipment || ''); },
+          createCtx: 'swap', createAttrs: ' data-entry="' + esc(entryId) + '"' + attrsMode
         }) + '</details>';
     }
     h += '<div class="btn-row"><button type="button" class="btn" data-action="close-sheet">ปิด</button></div>';
+    return h;
+  };
+
+  V.entrySheet = function (entryId) {
+    const entry = GL.findEntry(state.active, entryId);
+    const n = GL.completedAny(entry).length;
+    return '<h3>จัดการท่านี้</h3><p class="muted small">' + esc(entry.exerciseName) + (n ? ' · จดแล้ว ' + n + ' เซต' : '') + '</p>' +
+      '<div class="stack">' +
+      '<button type="button" class="btn" data-action="swap" data-entry="' + esc(entryId) + '">' + ico('swap', 20) + 'เปลี่ยนท่า / แก้ท่าที่จดผิด</button>' +
+      '<button type="button" class="btn" data-action="add-ex">' + ico('plus', 20) + 'เพิ่มท่าต่อจากท่านี้</button>' +
+      '<button type="button" class="btn danger" data-action="entry-remove-ask" data-entry="' + esc(entryId) + '">' + ico('trash', 20) + 'ลบท่านี้ออกจาก session</button>' +
+      '<button type="button" class="btn ghost" data-action="close-sheet">ปิด</button></div>';
+  };
+
+  V.removeEntrySheet = function (entryId) {
+    const entry = GL.findEntry(state.active, entryId);
+    const n = GL.completedAny(entry).length;
+    return '<h3>ลบ “' + esc(entry.exerciseName) + '” ออกจาก session?</h3>' +
+      '<p>ท่านี้จดไว้ <b>' + n + ' เซต</b> — ลบแล้วเซตเหล่านี้จะหายจาก session นี้ (มีปุ่ม “ย้อนกลับ” ให้ทันทีหลังลบ)</p>' +
+      '<div class="stack"><button type="button" class="btn danger solid" data-action="entry-remove-confirm" data-entry="' + esc(entryId) + '">ลบท่านี้และเซตที่จดไว้</button>' +
+      '<button type="button" class="btn" data-action="swap-fix" data-entry="' + esc(entryId) + '">จดผิดท่า? ย้ายเซตไปเป็นท่าอื่นแทน</button>' +
+      '<button type="button" class="btn ghost" data-action="close-sheet">ไม่ลบ</button></div>';
+  };
+
+  /* ฟอร์มสร้างท่าแบบเร็ว (ในหน้าจด / ตอนเปลี่ยนท่า / ตอนแก้แผน) — ค่าอื่นตั้งให้ก่อน แก้ละเอียดได้ในแท็บ ท่า */
+  V.quickExSheet = function () {
+    const c = GL.sheetCtx, q = c.qx;
+    const ctxLabel = c.ctx === 'plan' ? 'และเพิ่มเข้าแผนเลย' : (c.ctx === 'swap' ? 'และใช้ท่านี้แทนเลย' : 'และเพิ่มเข้า session เลย');
+    return '<h3>สร้างท่าใหม่</h3>' +
+      '<div class="field-lbl">ชื่อท่า</div><input class="field" type="text" id="qx-name" data-qx="name" maxlength="120" autocomplete="off" placeholder="เช่น T-Bar Row (Close Grip)" value="' + esc(q.name) + '">' +
+      '<div class="field-lbl">กล้ามเนื้อหลัก</div><div class="chips wrap" id="qx-muscles">' +
+      GL.muscleOptions().map(function (m) { return '<button type="button" class="chip' + (q.muscle === m ? ' on' : '') + '" data-action="qx-muscle" data-v="' + esc(m) + '" aria-pressed="' + (q.muscle === m) + '">' + esc(m) + '</button>'; }).join('') + '</div>' +
+      '<div class="field-lbl">อุปกรณ์</div><div class="chips wrap" id="qx-equips">' +
+      GL.QX_EQUIP.map(function (e, i) { return '<button type="button" class="chip' + (q.equipKey === i ? ' on' : '') + '" data-action="qx-equip" data-i="' + i + '" aria-pressed="' + (q.equipKey === i) + '">' + esc(e[0]) + '</button>'; }).join('') + '</div>' +
+      '<input class="field" type="text" id="qx-equip-text" data-qx="equipment" maxlength="80" autocomplete="off" placeholder="ชื่อเครื่อง (ไม่บังคับ) เช่น เครื่อง T-Bar" value="' + esc(q.equipment) + '">' +
+      '<p class="hint" id="qx-hint">' + esc(GL.qxHint(q)) + '</p>' +
+      '<div class="stack" style="margin-top:10px"><button type="button" class="btn primary" data-action="qx-save">สร้างท่า ' + ctxLabel + '</button>' +
+      '<button type="button" class="btn ghost" data-action="qx-cancel">ยกเลิก</button></div>';
+  };
+
+  /* ---------- ตั้งค่า ---------- */
+  function switchRow(key, title, sub) {
+    const on = GL.setting(key) !== false;
+    return '<div class="switch-row"><div class="sw-txt">' + esc(title) + (sub ? '<small>' + esc(sub) + '</small>' : '') + '</div>' +
+      '<button type="button" class="switch" role="switch" aria-checked="' + on + '" aria-label="' + esc(title) + '" data-action="set-toggle" data-key="' + key + '"></button></div>';
+  }
+  V.settings = function () {
+    const rest = GL.setting('restSeconds');
+    const isPreset = GL.REST_PRESETS.indexOf(rest) >= 0;
+    const custom = !!(state.sub && state.sub.customRest) || !isPreset;
+    let h = '<div class="topbar"><button type="button" class="back" data-action="home">' + ico('back', 24) + 'หน้าแรก</button></div><h1>ตั้งค่า</h1>';
+    h += '<section class="card"><h3>ตัวจับเวลาพัก</h3>' +
+      switchRow('restAuto', 'เริ่มนับเวลาพักอัตโนมัติ', 'นับต่อเมื่อกดยืนยันเซต') +
+      '<div class="fl">เวลาพักเริ่มต้น</div><div class="rest-presets" role="group" aria-label="เวลาพักเริ่มต้น">' +
+      GL.REST_PRESETS.map(function (v) {
+        return '<button type="button" class="chip' + (!custom && rest === v ? ' on' : '') + '" data-action="set-rest" data-v="' + v + '" aria-pressed="' + (!custom && rest === v) + '">' + v + ' วินาที</button>';
+      }).join('') +
+      '<button type="button" class="chip' + (custom ? ' on' : '') + '" data-action="set-rest-custom" aria-pressed="' + custom + '">กำหนดเอง</button></div>';
+    if (custom) {
+      h += '<div class="rest-custom"><input type="text" id="rest-custom" inputmode="numeric" pattern="[0-9]*" value="' + esc(rest) + '" aria-label="เวลาพักกำหนดเอง (วินาที)"><span class="muted">วินาที (10–900)</span></div>';
+    }
+    h += '<p class="hint">ตอนพัก กด −15 / +15 ที่แถบจับเวลาได้ · ตั้งเวลาพักเฉพาะบางท่าได้ที่แท็บ ท่า → แก้ไขท่า</p>' +
+      switchRow('restSound', 'เสียงเตือนเมื่อพักครบ', 'เสียงสั้น ๆ (เครื่องที่ปิดเสียงจะไม่ดัง)') + '</section>';
+    h += '<section class="card"><h3>หน้าจอ</h3>' + switchRow('keepAwake', 'เปิดจอค้างระหว่างจดเซต', 'กันจอดับตอนพักระหว่างเซต (ใช้แบตเพิ่มเล็กน้อย)') + '</section>';
+    h += '<section class="card"><h3>ข้อมูลและแอป</h3><button type="button" class="btn" data-action="open-backup">' + ico('backup', 22) + 'สำรอง / กู้คืนข้อมูล</button>' +
+      kv('เวอร์ชันแอป', esc(GL.APP_VERSION)) + '</section>';
     return h;
   };
 
@@ -537,7 +632,9 @@
 
   V.planAddExSheet = function () {
     const list = state.exercises.filter(function (e) { return !e.archived; }).sort(GL.byName);
-    return '<h3>เลือกท่าเพิ่มในแผน</h3>' + V.pickerList('pi-add-pick', function (e) { return 'data-ex="' + esc(e.id) + '"'; }, list) +
+    return '<h3>เลือกท่าเพิ่มในแผน</h3>' +
+      '<button type="button" class="btn primary create-cta" data-action="qx-open" data-ctx="plan">' + ico('plus', 20) + 'สร้างท่าใหม่ (ไม่มีในรายการ)</button>' +
+      V.pickerList('pi-add-pick', function (e) { return 'data-ex="' + esc(e.id) + '"'; }, list, { createCtx: 'plan' }) +
       '<div class="btn-row"><button type="button" class="btn" data-action="close-sheet">ปิด</button></div>';
   };
 
@@ -604,6 +701,8 @@
       '<div><label class="fl" for="ef-rmax">reps สูงสุด</label><input type="text" id="ef-rmax" inputmode="numeric" pattern="[0-9]*" data-ef="repMax" value="' + esc(d.repMax) + '"></div></div>';
     h += '<label class="fl" for="ef-step">น้ำหนักที่เพิ่มได้ต่อขั้น (kg)</label><input type="text" id="ef-step" inputmode="decimal" data-ef="step" value="' + esc(d.step) + '">' +
       '<p class="hint">ตามอุปกรณ์จริง เช่น แผ่นเหล็กบาร์ 2.5, แผ่นน้ำหนักบนเครื่องทีละ 5</p>';
+    h += '<label class="fl" for="ef-rest">เวลาพักหลังแต่ละเซต (วินาที) — ไม่บังคับ</label><input type="text" id="ef-rest" inputmode="numeric" pattern="[0-9]*" data-ef="restSec" value="' + esc(d.restSec || '') + '" placeholder="เว้นว่าง = ใช้ค่ากลาง ' + GL.setting('restSeconds') + ' วินาที">' +
+      '<p class="hint">ตั้งเฉพาะท่าที่ต้องพักนานหรือสั้นกว่าปกติ (10–900) ค่ากลางแก้ได้ที่หน้าแรก → ตั้งค่า</p>';
     h += '<label class="fl" for="ef-note">หมายเหตุสั้น ๆ (แสดงบนหน้าจด ไม่บังคับ)</label><input type="text" id="ef-note" data-ef="note" maxlength="300" value="' + esc(d.note || '') + '" autocomplete="off">';
 
     h += '<label class="fl">ภาพการเคลื่อนไหว</label><div class="icon-grid">' + I.EX_KEYS.map(function (k) {

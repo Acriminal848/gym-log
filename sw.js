@@ -4,7 +4,7 @@
  * เมื่อแก้ไฟล์แอปแล้วจะปล่อยเวอร์ชันใหม่ ต้องเปลี่ยน VERSION ด้านล่าง (และ APP_VERSION ใน core.js)
  * ไม่งั้นเบราว์เซอร์จะไม่เห็นว่า sw.js เปลี่ยน และผู้ใช้จะยังเห็นไฟล์เก่า
  */
-const VERSION = '1.3.1';
+const VERSION = '1.4.0';
 const CACHE_PREFIX = 'gymlog-cache-';
 const CACHE = CACHE_PREFIX + VERSION;
 
@@ -13,6 +13,7 @@ const ASSETS = [
   './index.html',
   './styles.css',
   './core.js',
+  './rest.js',
   './views.js',
   './app.js',
   './storage.js',

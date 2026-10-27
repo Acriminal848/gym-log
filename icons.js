@@ -265,6 +265,8 @@
     edit: '<path d="m5 19 .8-3.7L16.2 4.9a1.9 1.9 0 0 1 2.7 0l.2.2a1.9 1.9 0 0 1 0 2.7L8.7 18.2z"/>',
     list: '<path d="M9 7h10M9 12h10M9 17h10"/><circle cx="5" cy="7" r=".8"/><circle cx="5" cy="12" r=".8"/><circle cx="5" cy="17" r=".8"/>',
     skip: '<path d="M6 6.5l7 5.5-7 5.5zM17 6v12"/>',
+    settings: '<path d="M4.5 8h9.5M18.5 8h1M4.5 16h1M9.5 16h10"/><circle cx="16.2" cy="8" r="2.2"/><circle cx="7.3" cy="16" r="2.2"/>',
+    timer: '<circle cx="12" cy="13.5" r="6.5"/><path d="M12 10.5v3.3l2 1.4M9.5 4.5h5"/>',
     keyboard: '<rect x="3.5" y="6.5" width="17" height="11" rx="2"/><path d="M7 10.5h.1M10 10.5h.1M13 10.5h.1M16 10.5h.1M8 14h8"/>'
   };
 

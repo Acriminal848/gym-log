@@ -130,6 +130,22 @@
 
   /* ---------- Export ---------- */
 
+  // ค่าตั้งค่าที่เขียนลงไฟล์สำรอง: unit เสมอ + คีย์ใหม่ (1.4+) เฉพาะที่ผู้ใช้เคยตั้ง
+  // (ข้อมูลเดิมที่ไม่เคยตั้งค่า จึงได้ไฟล์สำรองหน้าตาเหมือนเดิม)
+  const OPT_SETTINGS = ['restSeconds', 'restAuto', 'restSound', 'keepAwake'];
+  function exportSettings(o) {
+    const out = { unit: o.unit || 'kg' };
+    OPT_SETTINGS.forEach(function (k) { if (o[k] !== undefined) out[k] = o[k]; });
+    return out;
+  }
+  function cleanSettings(raw) {
+    const out = { unit: 'kg' };
+    if (!isObj(raw)) return out;
+    if (Number.isInteger(raw.restSeconds) && raw.restSeconds >= 10 && raw.restSeconds <= 900) out.restSeconds = raw.restSeconds;
+    ['restAuto', 'restSound', 'keepAwake'].forEach(function (k) { if (typeof raw[k] === 'boolean') out[k] = raw[k]; });
+    return out;
+  }
+
   async function exportAll(appVersion) {
     const db = await openDb();
     const stores = ['exercises', 'plans', 'workouts', 'settings'];
@@ -152,7 +168,7 @@
         exercises: res[0],
         plans: res[1],
         workouts: res[2],
-        settings: { unit: settingsObj.unit || 'kg' }
+        settings: exportSettings(settingsObj)
       }
     };
   }
@@ -215,6 +231,7 @@
       // ฟิลด์เสริม (เวอร์ชัน 1.3+): ใส่เฉพาะเมื่อมีค่า เพื่อให้ข้อมูลเก่า export/import แล้วเหมือนเดิมทุกไบต์
       if (typeof e.icon === 'string' && e.icon) exRec.icon = str(e.icon, 40);
       if (typeof e.note === 'string' && e.note) exRec.note = str(e.note, 300);
+      if (Number.isInteger(e.restSec) && e.restSec >= 10 && e.restSec <= 900) exRec.restSec = e.restSec;   // เวลาพักเฉพาะท่า (1.4+)
       exercises.push(exRec);
     });
 
@@ -327,7 +344,7 @@
       },
       clean: {
         exercises: exercises, plans: plans, workouts: workouts,
-        settings: { unit: isObj(d.settings) && d.settings.unit === 'kg' ? 'kg' : 'kg' }
+        settings: cleanSettings(d.settings)
       }
     };
   }
@@ -344,6 +361,7 @@
         clean[name].forEach(function (r) { st.put(r); });
       });
       tx.objectStore('settings').put({ key: 'unit', value: clean.settings.unit });
+      OPT_SETTINGS.forEach(function (k) { if (clean.settings[k] !== undefined) tx.objectStore('settings').put({ key: k, value: clean.settings[k] }); });
       tx.objectStore('settings').put({ key: 'seeded', value: true });
       tx.objectStore('settings').put({ key: 'program', value: 'restored' });   // กู้คืนแล้วไม่เติมโปรแกรมให้อีก
     });

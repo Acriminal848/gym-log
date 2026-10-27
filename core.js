@@ -11,7 +11,7 @@
 
   const GL = window.GL = {
     S: window.GymStorage, P: window.GymProgression, SM: window.GymSummary, I: window.GymIcons, PG: window.GymProgram,
-    APP_VERSION: '1.3.1',
+    APP_VERSION: '1.4.0',
     views: {}
   };
   const S = GL.S, P = GL.P;
@@ -29,6 +29,63 @@
   GL.WEIGHT_MODE_ORDER = ['barbell_total', 'dumbbell_each', 'machine', 'cable', 'bodyweight'];
   GL.DEFAULT_MUSCLES = ['อก', 'หลัง', 'ไหล่', 'ขา', 'ก้น', 'ไบเซ็ป', 'ไตรเซ็ป', 'หน้าท้อง', 'น่อง', 'ปลายแขน'];
 
+  /* ---------- การตั้งค่า (เก็บใน settings store ทีละ key — ไม่ต้องเปลี่ยนโครงฐานข้อมูล) ---------- */
+  GL.DEFAULTS = { restSeconds: 90, restAuto: true, restSound: true, keepAwake: true };
+  GL.REST_PRESETS = [60, 90, 120, 180];
+  GL.setting = function (key) {
+    const v = window.GL.state.settings[key];
+    return v === undefined ? GL.DEFAULTS[key] : v;
+  };
+  // เวลาพักของท่านี้: ค่าที่ตั้งเฉพาะท่า (restSec) ถ้ามี ไม่งั้นใช้ค่ากลางในตั้งค่า
+  GL.restFor = function (ex) {
+    const s = ex && ex.restSec;
+    return Number.isInteger(s) && s >= 10 && s <= 900 ? s : GL.setting('restSeconds');
+  };
+  GL.fmtClock = function (sec) {
+    sec = Math.max(0, Math.round(sec));
+    return Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
+  };
+  /* ---------- สร้างท่าแบบเร็ว: ค่าเริ่มต้นตามอุปกรณ์ + เดาภาพจากชื่อ ---------- */
+  // [ชื่อบนชิป, วิธีนับน้ำหนัก, ขั้นน้ำหนักเริ่มต้น]
+  GL.QX_EQUIP = [
+    ['เครื่อง', 'machine', 5], ['สายเคเบิล', 'cable', 2.5], ['บาร์เบล', 'barbell_total', 2.5],
+    ['ดัมเบล', 'dumbbell_each', 2], ['Smith Machine', 'machine', 5], ['น้ำหนักตัว', 'bodyweight', 2.5]
+  ];
+  // เรียงจากเฉพาะเจาะจงไปทั่วไป (ตัวแรกที่ตรงชนะ)
+  const ICON_GUESS = [
+    [/t[\s-]?bar/i, 'tbar_row'], [/leg\s*press/i, 'leg_press'], [/hack/i, 'hack_squat'], [/hip\s*thrust|glute/i, 'hip_thrust'],
+    [/leg\s*ext/i, 'leg_extension'], [/lying.*curl|prone.*curl/i, 'lying_curl'], [/leg\s*curl|hamstring/i, 'leg_curl'],
+    [/calf/i, 'calf_raise'], [/cable\s*crunch/i, 'cable_crunch'], [/crunch|sit[\s-]?up|abs?\b/i, 'crunch'],
+    [/pull[\s-]?down|lat\b/i, 'lat_pulldown'], [/single[\s-]?arm|one[\s-]?arm|unilateral/i, 'one_arm_row'], [/row/i, 'cable_row'],
+    [/rear|reverse\s*(pec|fly)/i, 'rear_fly'], [/lateral|side\s*raise/i, 'lateral_raise'], [/preacher/i, 'preacher'],
+    [/(ez|bar).*curl|curl.*bar/i, 'bar_curl'], [/curl/i, 'curl'], [/push[\s-]?down|tricep|extension/i, 'pushdown'],
+    [/incline/i, 'incline_press'], [/chest\s*press|bench|press/i, 'chest_press'], [/cable.*fly|fly.*cable/i, 'cable_fly'], [/fly|pec/i, 'pec_fly']
+  ];
+  GL.guessIcon = function (name) {
+    for (let i = 0; i < ICON_GUESS.length; i++) if (ICON_GUESS[i][0].test(name || '')) return ICON_GUESS[i][1];
+    return '';
+  };
+  // ท่าอ้างอิงสำหรับคัดลอกช่วง reps/ขั้นน้ำหนัก/ภาพ: ท่าที่กำลังดูอยู่ ถ้ากล้ามเนื้อเดียวกัน
+  GL.qxDefaults = function (q, refEx) {
+    const eq = GL.QX_EQUIP[q.equipKey] || GL.QX_EQUIP[0];
+    const sameMuscle = refEx && q.muscle && refEx.muscle === q.muscle;
+    return {
+      weightMode: eq[1],
+      repMin: sameMuscle ? refEx.repMin : 8, repMax: sameMuscle ? refEx.repMax : 12,
+      step: sameMuscle && refEx.weightMode === eq[1] ? refEx.step : eq[2],
+      icon: GL.guessIcon(q.name) || (sameMuscle && refEx.icon ? refEx.icon : '')
+    };
+  };
+  GL.qxHint = function (q) {
+    const d = GL.qxDefaults(q, GL.exById(q.refId));
+    return 'จะตั้งช่วง reps ' + d.repMin + '–' + d.repMax + ' และขั้นน้ำหนัก ' + GL.fmtNum(d.step) + ' kg ให้ก่อน (แก้ละเอียดได้ภายหลังในแท็บ “ท่า”)';
+  };
+
+  GL.inSession = function () {
+    const st = window.GL.state;
+    return st.tab === 'home' && !!st.sub && st.sub.name === 'session' && !!st.active;
+  };
+
   const state = GL.state = {
     tab: 'home',                // home | plans | exercises | history
     sub: null,                  // หน้าย่อยของแท็บ (null = หน้ารากของแท็บ)
@@ -42,7 +99,10 @@
     hisMode: 'sessions',        // sessions | exercises | weeks
     sumMode: 'ex', sumView: 'session',
     exQuery: '', exMuscle: '',
-    lastFinishedId: null
+    lastFinishedId: null,
+    rest: null,                 // ตัวจับเวลาพัก { total, endsAt, announced } (อยู่ในหน่วยความจำเท่านั้น)
+    justSet: null,              // id เซตที่เพิ่งยืนยัน ใช้เล่นแอนิเมชันครั้งเดียว
+    addSets: 3                  // จำนวนเซตเริ่มต้นเมื่อเพิ่มท่าเข้า session
   };
 
   /* ---------- ตัวช่วยทั่วไป ---------- */
@@ -169,7 +229,7 @@
 
   /* ---------- Undo (แสดงค้างจนมีการกระทำถัดไป) ---------- */
 
-  GL.setUndo = function (u) { state.undo = u || null; };
+  GL.setUndo = function (u) { state.undo = u ? Object.assign(u, { fresh: true }) : null; };
   GL.clearUndo = function () { state.undo = null; };
 
   /* ---------- โมเดลเซตของท่าหนึ่ง ---------- */
