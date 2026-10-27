@@ -215,7 +215,7 @@
     if (slot) slot.innerHTML = V.undoStrip();
   }
   function dropUndo() {
-    if (state.undo && !state.undo.error) { GL.clearUndo(); const w = state.active; const slot = view.querySelector('.strip-slot'); if (slot && w) slot.innerHTML = V.sessionLine(w); }
+    if (state.undo && !state.undo.error) { GL.clearUndo(); const w = state.active; const slot = view.querySelector('.strip-slot'); if (slot && w) slot.innerHTML = ''; }
   }
   function flagError(el, msg) {
     if (el) { el.classList.add('bad'); el.focus(); }
@@ -593,6 +593,7 @@
     if (!s || s.name !== 'ex-edit') return;
     const d = s.draft;
     const bad = function (msg) { GL.toast(msg, { error: true }); };
+    const badAdv = function (msg) { s.adv = true; render(); GL.toast(msg, { error: true }); };   // 1.8: ค่าที่ผิดอยู่ใน “ตั้งค่าเพิ่มเติม” → เปิดให้เห็นก่อนแจ้ง
     const name = d.name.trim();
     if (!name) return bad('ใส่ชื่อท่าก่อน');
     const lower = name.toLowerCase();
@@ -600,15 +601,15 @@
       return bad('มีท่าชื่อ “' + name + '” อยู่แล้ว (รวมท่าที่เก็บเข้าคลัง)');
     }
     const repMin = GL.parseReps(d.repMin), repMax = GL.parseReps(d.repMax);
-    if (isNaN(repMin) || isNaN(repMax)) return bad('ช่วง reps ต้องเป็นเลขเต็ม 1 ขึ้นไป');
-    if (repMin > repMax || repMax > 100) return bad('reps ต่ำสุดต้องไม่เกิน reps สูงสุด (และไม่เกิน 100)');
+    if (isNaN(repMin) || isNaN(repMax)) return badAdv('ช่วง reps ต้องเป็นเลขเต็ม 1 ขึ้นไป');
+    if (repMin > repMax || repMax > 100) return badAdv('reps ต่ำสุดต้องไม่เกิน reps สูงสุด (และไม่เกิน 100)');
     const step = GL.parseWeight(d.step);
-    if (step === null || isNaN(step) || step <= 0 || step > 500) return bad('น้ำหนักที่เพิ่มต่อขั้นต้องมากกว่า 0');
+    if (step === null || isNaN(step) || step <= 0 || step > 500) return badAdv('น้ำหนักที่เพิ่มต่อขั้นต้องมากกว่า 0');
     if (GL.WEIGHT_MODE_ORDER.indexOf(d.weightMode) < 0) return bad('เลือกวิธีนับน้ำหนัก');
     let restSec = null;
     const rs = String(d.restSec || '').trim();
     if (rs !== '') {
-      if (!/^\d+$/.test(rs) || Number(rs) < 10 || Number(rs) > 900) return bad('เวลาพักต้องเป็นเลขเต็ม 10–900 วินาที (หรือเว้นว่างเพื่อใช้ค่ากลาง)');
+      if (!/^\d+$/.test(rs) || Number(rs) < 10 || Number(rs) > 900) return badAdv('เวลาพักต้องเป็นเลขเต็ม 10–900 วินาที (หรือเว้นว่างเพื่อใช้ค่ากลาง)');
       restSec = Number(rs);
     }
 
@@ -624,7 +625,8 @@
       isSample: false,
       createdAt: existing && existing.createdAt ? existing.createdAt : new Date().toISOString()
     };
-    if (d.icon && GL.I.EX_KEYS.indexOf(d.icon) >= 0) rec.icon = d.icon;
+    const iconKey = d.icon || (!existing ? GL.guessIcon(name) : '');   // ท่าใหม่ที่ไม่ได้เลือกภาพ → เดาจากชื่อ
+    if (iconKey && GL.I.EX_KEYS.indexOf(iconKey) >= 0) rec.icon = iconKey;
     if (d.note && d.note.trim()) rec.note = d.note.trim().slice(0, 300);
     if (restSec) rec.restSec = restSec;
     try { await S.put('exercises', rec); } catch (e) { return bad('บันทึกไม่สำเร็จ: ' + (e && e.message ? e.message : '')); }
@@ -944,9 +946,21 @@
     switch (a) {
       case 'tab': nav(d.tab, null); break;
       case 'home': nav('home', null); break;
-      case 'plan-view': nav('home', { name: 'plan-view', id: d.plan }); break;
+      case 'plan-view': GL.closeSheet(); nav('home', { name: 'plan-view', id: d.plan }); break;
       case 'start-plan': requestStart(d.plan); break;
       case 'start-free': requestStart(null); break;
+      case 'plans-sheet': GL.openSheet(V.plansSheet()); break;
+      case 'wk-edit': nav('plans', null); break;
+      case 'wk-up': case 'wk-down': case 'wk-del': {
+        const ids = GL.weekSlots().map(function (p) { return p.id; }), i = Number(d.i);
+        if (!(i >= 0 && i < ids.length)) break;
+        if (a === 'wk-del') ids.splice(i, 1);
+        else { const j = a === 'wk-up' ? i - 1 : i + 1; if (j < 0 || j >= ids.length) break; const t = ids[i]; ids[i] = ids[j]; ids[j] = t; }
+        saveSetting('weekPlan', ids); break;
+      }
+      case 'wk-add': GL.openSheet(V.weekAddSheet()); break;
+      case 'wk-add-pick': { const ids = GL.weekSlots().map(function (p) { return p.id; }); ids.push(d.plan); GL.closeSheet(); saveSetting('weekPlan', ids.slice(0, 30)); break; }
+      case 'wk-reset': saveSetting('weekPlan', []); break;
       case 'resume': GL.closeSheet(); nav('home', { name: 'session' }); break;
       case 'manage': GL.openSheet(V.manageSheet()); break;
       case 'cancel-session': cancelSession(); break;
@@ -962,6 +976,7 @@
       case 'set-rest': if (state.sub) state.sub.customRest = false; saveSetting('restSeconds', Number(d.v)); break;
       case 'set-rest-custom': if (state.sub) state.sub.customRest = true; render(); { const i = document.getElementById('rest-custom'); if (i) { i.focus(); i.select(); } } break;
       case 'hint-seen': saveSetting('hintSug', 'seen'); break;
+      case 'target-info': if (state.active) GL.openSheet(V.targetInfoSheet(d.entry)); break;
       case 'rest-skip': if (GL.rest) GL.rest.stop(); break;
       case 'rest-minus': if (GL.rest) GL.rest.adjust(-15); break;
       case 'rest-plus': if (GL.rest) GL.rest.adjust(15); break;
@@ -1062,6 +1077,16 @@
       case 'ex-muscle': state.exMuscle = d.v; render(); break;
       case 'muscle-pick': if (state.sub && state.sub.draft) { state.sub.draft.muscle = d.v; state.sub.dirty = true; render(); } break;
       case 'icon-pick': if (state.sub && state.sub.draft) { state.sub.draft.icon = d.v; state.sub.dirty = true; render(); } break;
+      case 'ex-adv': if (state.sub && state.sub.draft) { state.sub.adv = !state.sub.adv; render(); } break;
+      case 'ex-equip': if (state.sub && state.sub.draft) {
+        const q = GL.QX_EQUIP[Number(d.i)], dr = state.sub.draft, tc = state.sub.touched || (state.sub.touched = {});
+        if (q) {
+          dr.equipment = q[0]; state.sub.dirty = true;
+          // ท่าใหม่เท่านั้น: เดาวิธีนับน้ำหนัก/ขั้นน้ำหนักจากอุปกรณ์ (ไม่ทับค่าที่พิมพ์เองแล้ว) — ท่าเดิมที่มีประวัติไม่เปลี่ยนวิธีนับเอง
+          if (!dr.id) { if (!tc.weightMode) dr.weightMode = q[1]; if (!tc.step) dr.step = GL.fmtNum(q[2]); }
+          render();
+        }
+      } break;
       case 'ex-archive': setExerciseArchived(d.id, true); break;
       case 'ex-unarchive': setExerciseArchived(d.id, false); break;
       case 'ex-delete-ask': {
@@ -1156,7 +1181,7 @@
     const t = ev.target;
     if (!t || !t.dataset || !state.sub || !state.sub.draft) return;
     const d = state.sub.draft;
-    if (t.dataset.ef) { d[t.dataset.ef] = t.value; state.sub.dirty = true; }
+    if (t.dataset.ef) { d[t.dataset.ef] = t.value; state.sub.dirty = true; (state.sub.touched || (state.sub.touched = {}))[t.dataset.ef] = true; }
     else if (t.dataset.pf) { d[t.dataset.pf] = t.value; state.sub.dirty = true; }
     else if (t.dataset.efSub) {
       const id = t.dataset.efSub, at = d.subs.indexOf(id);

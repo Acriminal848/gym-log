@@ -11,10 +11,10 @@
 
   const GL = window.GL = {
     S: window.GymStorage, P: window.GymProgression, SM: window.GymSummary, I: window.GymIcons, PG: window.GymProgram,
-    APP_VERSION: '1.6.0',
+    APP_VERSION: '1.8.0',
     views: {}
   };
-  const S = GL.S, P = GL.P;
+  const S = GL.S, P = GL.P, SM = GL.SM;
 
   GL.WEIGHT_MODE_LABEL = {
     barbell_total: 'บาร์เบล · นับน้ำหนักรวมบาร์',
@@ -339,6 +339,18 @@
       });
     });
     return out.slice(0, limit || 2);
+  };
+
+  /* 1.8: ช่องของแผนรายสัปดาห์ (ซ้ำแผนได้) — ใช้ค่าที่ผู้ใช้ตั้ง (settings.weekPlan) ถ้าไม่มี/ว่าง ใช้ค่าเริ่มต้น = แผนทั้งหมดที่ไม่ใช่วันเสริมตามลำดับ */
+  GL.weekIsCustom = function () {
+    const wp = state.settings.weekPlan;
+    return Array.isArray(wp) && wp.some(function (id) { return !!GL.planById(id) && !GL.planById(id).archived; });
+  };
+  GL.weekSlots = function () {
+    if (GL.weekIsCustom()) {
+      return state.settings.weekPlan.map(function (id) { return GL.planById(id); }).filter(function (p) { return p && !p.archived; });
+    }
+    return SM.rotationPlans(GL.sortedPlans());
   };
 
   GL.sortedPlans = function () {

@@ -32,7 +32,7 @@ def fill(pg, w, r):
     pg.fill('input[data-pending="0"][data-field=weight]', str(w)); pg.fill('input[data-pending="0"][data-field=reps]', str(r))
 def confirm(pg):
     pg.click('.cf.cur'); pg.wait_for_timeout(250)
-PLANSEL = '.plan-card'
+PLANSEL = '.plan-card' if 'plan-card' in open(os.path.join(OLD, 'views.js'), encoding='utf-8').read() else '.plan-row'   # 1.3.x ใช้ plan-card, 1.5+ ใช้ plan-row
 def to_home(pg):
     if not pg.locator('#tabs').is_visible():
         pg.click('.s-head .back'); pg.wait_for_selector('#tabs', state='visible')
@@ -45,21 +45,21 @@ try:
             c = p.chromium.launch_persistent_context(ud, viewport={'width': 390, 'height': 844}, service_workers='block')
             c.route('**/*', lambda r: r.continue_(headers={**r.request.headers, 'cache-control': 'no-cache'}))
             return c
-        c1 = ctx(); pg = c1.new_page(); pg.goto(URL); pg.wait_for_selector('.plan-card'); pg.wait_for_timeout(600)
+        c1 = ctx(); pg = c1.new_page(); pg.goto(URL); pg.wait_for_selector(PLANSEL); pg.wait_for_timeout(600)
         pg.evaluate("""async () => { const now = new Date().toISOString();
           await GymStorage.put('exercises', {id:'user-leg', name:'My Leg Curl (สมมติ)', muscle:'ขา', equipment:'เครื่อง', repMin:8, repMax:12, step:5, weightMode:'machine', subs:[], archived:false, isSample:false, createdAt:now});
           await GymStorage.put('exercises', {id:'user-shoulder', name:'My Shoulder (สมมติ)', muscle:'ไหล่', equipment:'ดัมเบล', repMin:8, repMax:12, step:2, weightMode:'dumbbell_each', subs:[], archived:false, isSample:false, createdAt:now});
           const lp = await GymStorage.get('exercises', 'ppl-leg-press'); lp.muscle = 'ขาที่ฉันตั้งเอง'; await GymStorage.put('exercises', lp);
           await GymStorage.put('exercises', {id:'user-extra', name:'My Extra Row (สมมติ)', muscle:'หลัง', equipment:'สายเคเบิล', repMin:8, repMax:12, step:2.5, weightMode:'cable', subs:[], archived:false, isSample:false, createdAt:now}); }""")
         # session 1 (จบแล้ว) ผ่านหน้าจอจริงของแอปเก่า
-        pg.reload(); pg.wait_for_selector('.plan-card')
-        pg.click('.plan-card:has-text("Pull")'); pg.click('[data-action=start-plan]'); pg.wait_for_selector('.sets')
+        pg.reload(); pg.wait_for_selector(PLANSEL)
+        pg.click(PLANSEL + ':has-text("Pull")'); pg.click('[data-action=start-plan]'); pg.wait_for_selector('.sets')
         for w_, r_ in ((60, 10), (60, 9), (57.5, 9)):
             fill(pg, w_, r_); confirm(pg)
         pg.click('[data-action=manage]'); pg.click('[data-action=finish]'); pg.click('[data-action=finish-confirm]'); pg.wait_for_timeout(500)
         # session 2 (ค้างอยู่) + ค่าที่พิมพ์ค้างในช่อง
         to_home(pg)
-        pg.click('.plan-card:has-text("Push")'); pg.click('[data-action=start-plan]'); pg.wait_for_selector('.sets')
+        pg.click(PLANSEL + ':has-text("Push")'); pg.click('[data-action=start-plan]'); pg.wait_for_selector('.sets')
         fill(pg, 80, 8); confirm(pg)
         fill(pg, 82.5, 7); confirm(pg)
         fill(pg, 70, 6)           # ยังไม่ยืนยัน = draft
@@ -75,7 +75,7 @@ try:
         pg.on('pageerror', lambda e: errs.append(str(e)))
         pg.on('console', lambda m: errs.append('console:' + m.text) if m.type == 'error' else None)
         pg.goto(URL)
-        try: pg.wait_for_selector('.plan-row', timeout=8000)
+        try: pg.wait_for_selector('.today-card, .session-bar', timeout=8000)
         except Exception: print('BOOT FAIL', errs, pg.inner_text('body')[:300]); raise
         pg.wait_for_timeout(800)
         ver_new = pg.evaluate("GL.APP_VERSION")
@@ -100,11 +100,16 @@ try:
         st = {r['key']: r['value'] for r in new['settings']}
         check('U3 settings เดิมไม่ถูกแก้/ลบ (ค่าที่มีอยู่เดิมคงอยู่)', all(r in new['settings'] for r in old['settings']), [r for r in old['settings'] if r not in new['settings']])
         added = sorted(r['key'] for r in new['settings'] if r not in old['settings'])
-        check('U4 คีย์ใหม่ที่แอปเขียนตอนเปิดครั้งแรกมีแค่ธงย้ายข้อมูลและสำรองค่าเดิม', added == ['muscleSplit', 'muscleSplitBackup'], added)
+        OLD_HAS_SPLIT = 'buildMuscleSplit' in open(os.path.join(OLD, 'program.js'), encoding='utf-8').read()   # เวอร์ชันเก่าตั้งแต่ 1.6 แยกชื่อกล้ามเนื้อไปแล้ว
+        check('U4 คีย์ใหม่ที่แอปเขียนตอนเปิดครั้งแรก: ' + ('ไม่มีเลย (เวอร์ชันเก่าแยกชื่อไปแล้ว)' if OLD_HAS_SPLIT else 'มีแค่ธงย้ายข้อมูลและสำรองค่าเดิม'),
+              added == ([] if OLD_HAS_SPLIT else ['muscleSplit', 'muscleSplitBackup']), added)
         bk = st.get('muscleSplitBackup') or []
         restored = {e['id']: dict(e) for e in new['exercises']}
         for b_ in bk: restored[b_['id']]['muscle'] = b_['muscle']
-        check('U4a สำรองค่าเดิมครบ: เอาค่าสำรองกลับไปใส่ → ได้ข้อมูลเดิมทุกตัวอักษร (ย้อนกลับได้)', [restored[e['id']] for e in old['exercises']] == old['exercises'] and len(bk) == 9, len(bk))
+        if OLD_HAS_SPLIT:
+            check('U4a เวอร์ชันเก่าแยกชื่อไปแล้ว: ท่าทั้งหมดเหมือนเดิมทุกตัวอักษร', new['exercises'] == old['exercises'])
+        else:
+          check('U4a สำรองค่าเดิมครบ: เอาค่าสำรองกลับไปใส่ → ได้ข้อมูลเดิมทุกตัวอักษร (ย้อนกลับได้)', [restored[e['id']] for e in old['exercises']] == old['exercises'] and len(bk) == 9, len(bk))
         exp_new = export(pg)
         exp_old_norm = json.loads(json.dumps(old_exp)); exp_old_norm['data']['exercises'] = [expect_ex(e) for e in exp_old_norm['data']['exercises']]
         check('U5 ไฟล์สำรอง (export) เหมือนของแอปเก่า ต่างเฉพาะชื่อกล้ามเนื้อที่แยกแล้ว', exp_new == exp_old_norm)
@@ -125,7 +130,7 @@ try:
         now_w = {w['id']: w for w in pg.evaluate("GymStorage.getAll('workouts')")}
         check('U11 หลังใช้งานต่อ session จบเดิมยังเหมือนเดิม', now_w[fin_old['id']] == fin_old)
         # เปลี่ยนการตั้งค่า → export มีค่าใหม่ และยัง import กลับได้
-        pg.click('#tabs [data-tab=home]'); pg.wait_for_selector('.plan-row')
+        pg.click('#tabs [data-tab=home]'); pg.wait_for_selector('.today-card, .session-bar')
         pg.click('[data-action=open-settings]'); pg.wait_for_selector('.rest-presets')
         pg.click('[data-action=set-rest][data-v="60"]'); pg.wait_for_timeout(200)
         ex2 = pg.evaluate("GymStorage.exportAll('x')")
@@ -136,7 +141,7 @@ try:
         pg.click('[data-action=open-backup]'); pg.wait_for_selector('[data-action=import-pick]')
         pg.set_input_files('#import-file', oldfile); pg.wait_for_selector('[data-action=import-replace-ask]')
         pg.click('[data-action=import-replace-ask]'); pg.wait_for_selector('[data-action=import-replace]'); pg.click('[data-action=import-replace]')
-        pg.wait_for_selector('.plan-row'); pg.wait_for_timeout(500)
+        pg.wait_for_selector('.today-card, .session-bar'); pg.wait_for_timeout(500)
         after = snap(pg); ab = {e['id']: e for e in after['exercises']}
         check('U12a กู้คืนไฟล์สำรองเก่า → ถูกแยกชื่อกล้ามเนื้อให้เหมือนกัน (ท่าผู้ใช้/ที่ผู้ใช้แก้เองไม่ถูกแตะ)', ab['ppl-hack-squat']['muscle'] == 'ต้นขาหน้า' and ab['ppl-cable-rear-delt-fly']['muscle'] == 'ไหล่หลัง' and ab['user-leg']['muscle'] == 'ขา' and ab['ppl-leg-press']['muscle'] == 'ขาที่ฉันตั้งเอง')
         check('U12b กู้คืนแล้วประวัติ/แผนตรงกับไฟล์ที่กู้ทุกตัวอักษร', after['workouts'] == [w for w in old['workouts']] or sorted(w['id'] for w in after['workouts']) == sorted(w['id'] for w in old['workouts']))

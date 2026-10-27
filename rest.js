@@ -11,6 +11,7 @@
   const GL = window.GL, state = GL.state;
   const bar = document.getElementById('rest-bar');
   const live = document.getElementById('rest-live');
+  const AUTO_HIDE_MS = 6000;     // ซ่อนแถบเองหลังพักครบ
   let tickId = null, audioCtx = null, wakeLock = null;
 
   bar.innerHTML =
@@ -21,6 +22,7 @@
     '</div>' +
     '<div class="rb-read"><span class="rb-lbl">พัก</span><span class="rb-time" id="rb-time">0:00</span></div>' +
     '<div class="rb-prog" aria-hidden="true"><i id="rb-fill"></i></div>';
+  const elSkip = bar.querySelector('.rb-skip');
   const elTime = bar.querySelector('#rb-time'), elLbl = bar.querySelector('.rb-lbl'), elFill = bar.querySelector('#rb-fill');
 
   /* ---------- เสียง ---------- */
@@ -64,18 +66,24 @@
     if (rem > 0) {
       bar.classList.remove('done');
       elLbl.textContent = 'พัก';
+      elSkip.textContent = 'ข้าม';
       elTime.textContent = GL.fmtClock(rem);
       elFill.style.width = Math.max(0, Math.min(100, (1 - rem / r.total) * 100)) + '%';
     } else {
+      /* 1.8: พักครบแล้ว "หยุดนับ" — ไม่นับเวลาเกิน (ไม่มีประโยชน์ตอนฝึก) แสดง “พร้อมเล่น” นิ่ง ๆ แล้วซ่อนเอง */
       bar.classList.add('done');
-      elLbl.textContent = 'พักครบแล้ว';
-      elTime.textContent = '+' + GL.fmtClock(-rem);
+      elLbl.textContent = '';
+      elSkip.textContent = 'ปิด';
+      elTime.textContent = 'พร้อมเล่น';
       elFill.style.width = '100%';
+      if (!r.announced && Date.now() - r.endsAt > AUTO_HIDE_MS) { GL.rest.stop(); return; }   // ครบไปนานแล้วตอนที่ซ่อนอยู่
       if (!r.announced) {
         r.announced = true;
+        r.doneAt = Date.now();
         beep();
-        if (live) live.textContent = 'พักครบแล้ว';
+        if (live) live.textContent = 'พักครบแล้ว พร้อมเล่น';
       }
+      if (Date.now() - (r.doneAt || Date.now()) >= AUTO_HIDE_MS) { GL.rest.stop(); return; }
     }
   }
   function startTick() { if (!tickId) tickId = setInterval(update, 250); }
@@ -86,7 +94,7 @@
     start: function (seconds) {
       if (!(seconds > 0)) return;
       if (live) live.textContent = '';
-      state.rest = { total: seconds, endsAt: Date.now() + seconds * 1000, announced: false };
+      state.rest = { total: seconds, endsAt: Date.now() + seconds * 1000, announced: false, doneAt: null };
       startTick(); update();
     },
     adjust: function (delta) {
@@ -94,11 +102,11 @@
       if (!r) return;
       const rem = r.endsAt - Date.now();
       if (rem <= 0) {
-        if (delta > 0) { r.endsAt = Date.now() + delta * 1000; r.total = delta; r.announced = false; }
+        if (delta > 0) { r.endsAt = Date.now() + delta * 1000; r.total = delta; r.announced = false; r.doneAt = null; }
       } else {
         r.endsAt = Math.max(Date.now(), r.endsAt + delta * 1000);
         r.total = Math.max(5, r.total + delta);
-        r.announced = r.endsAt <= Date.now() ? r.announced : false;
+        if (r.endsAt > Date.now()) { r.announced = false; r.doneAt = null; }
       }
       update();
     },
@@ -119,6 +127,12 @@
     } catch (e) { wakeLock = null; }
   }
   GL.wake = { sync: syncWake };
+
+  // แตะช่องกรอกหลังพักครบ = พร้อมเล่นแล้ว → ซ่อนแถบทันที (ไม่ต้องกดข้าม)
+  document.addEventListener('focusin', function (e) {
+    const r = state.rest;
+    if (r && r.announced && e.target && e.target.classList && e.target.classList.contains('st-in')) GL.rest.stop();
+  });
 
   document.addEventListener('visibilitychange', function () {
     if (document.visibilityState === 'visible') { update(); syncWake(); }

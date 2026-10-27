@@ -145,6 +145,29 @@
     return { plan: rotation[0], after: null };
   }
 
+  /* 1.8: แผนรายสัปดาห์ — ลำดับเป็น “ช่อง” (ซ้ำแผนได้) รีเซ็ตทุกสัปดาห์ (จันทร์–อาทิตย์)
+   * ช่องถัดไป = ช่องแรกที่ยังไม่ได้ทำ “ในสัปดาห์นี้” ไม่ผูกกับวัน ไม่ตามทวงช่องที่ข้ามไปจากสัปดาห์ก่อน
+   * session ที่จบแล้วและมีเซตจริงอย่างน้อย 1 เซต จะถูกจับคู่กับช่องแรกที่ยังว่างของแผนเดียวกัน (เรียงตามเวลา)
+   * session ของแผนที่ไม่อยู่ในช่อง (เช่น วันเสริม) หรือซ้ำเกินจำนวนช่อง ไม่นับ
+   * slotPlanIds: id แผนตามลำดับช่อง → { slots:[{planId, done, workoutId}], next: index|null, doneCount, complete } */
+  function weekProgress(slotPlanIds, workouts, todayKey) {
+    const ws = weekStart(todayKey), we = weekEnd(ws);
+    const slots = slotPlanIds.map(function (id) { return { planId: id, done: false, workoutId: null }; });
+    workouts.filter(function (w) {
+      return w.status === 'finished' && w.date >= ws && w.date <= we && w.entries.some(function (e) { return completedWorking(e).length; });
+    }).sort(function (a, b) {
+      if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+      const sa = a.startedAt || '', sb = b.startedAt || '';
+      return sa < sb ? -1 : sa > sb ? 1 : 0;
+    }).forEach(function (w) {
+      const s = slots.find(function (x) { return !x.done && x.planId === w.planId; });
+      if (s) { s.done = true; s.workoutId = w.id; }
+    });
+    const next = slots.findIndex(function (x) { return !x.done; });
+    const doneCount = slots.filter(function (x) { return x.done; }).length;
+    return { slots: slots, next: next < 0 ? null : next, doneCount: doneCount, complete: slots.length > 0 && next < 0 };
+  }
+
   // แถบสัปดาห์ (จันทร์–อาทิตย์) ของวันที่ todayKey: นับเฉพาะ session ที่จบแล้วและมีเซตจริงอย่างน้อย 1 เซต
   function weekStrip(workouts, todayKey) {
     const ws = weekStart(todayKey);
@@ -316,7 +339,7 @@
     e1rm: e1rm, muscleWeek: muscleWeek, exerciseTrend: exerciseTrend, consistencyGrid: consistencyGrid,
     sessionPRs: sessionPRs, durationMin: durationMin, sessionMuscles: sessionMuscles,
     weekStart: weekStart, weekEnd: weekEnd,
-    rotationPlans: rotationPlans, nextInRotation: nextInRotation, weekStrip: weekStrip,
+    rotationPlans: rotationPlans, nextInRotation: nextInRotation, weekProgress: weekProgress, weekStrip: weekStrip,
     muscleSets: muscleSets, untrainedMuscles: untrainedMuscles,
     exerciseIndex: exerciseIndex, exerciseHistory: exerciseHistory, weeklyOverview: weeklyOverview
   };

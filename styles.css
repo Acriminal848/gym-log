@@ -283,14 +283,15 @@ p { margin: 6px 0; }
 }
 .undo-strip.error { background: var(--danger); }
 
-.strip-slot { min-height: 44px; margin: 0 0 6px; display: flex; align-items: center; }
-.strip-slot > * { flex: 1; }
+/* 1.8: ช่องนี้ใช้แสดง Undo ชั่วคราว ลอยทับเนื้อหา ไม่ดันตารางให้ขยับ */
+.strip-slot { position: relative; height: 0; margin: 0; }
+.strip-slot > * { position: absolute; left: 0; right: 0; top: 4px; z-index: 6; box-shadow: 0 6px 18px rgba(25, 32, 38, 0.25); }
 .sess-line { font-size: 14px; color: var(--text2); text-align: center; }
 .sess-line b { color: var(--text); }
 .ex-head { display: flex; gap: 12px; align-items: center; margin: 2px 0 8px; }
 .ex-head .eh-main { flex: 1; min-width: 0; }
 .ex-head h1 { font-size: 21px; line-height: 1.25; margin: 0 0 2px; overflow-wrap: anywhere; }
-.ex-head .meta { font-size: 14px; color: var(--text2); }
+.ex-head .meta { font-size: 14px; color: #3F4A54; }
 .ex-actions { display: flex; gap: 8px; margin: 6px 0 10px; }
 .ex-actions .btn { flex: 1; min-height: 44px; font-size: 15px; padding: 6px 10px; }
 .ex-actions .iconbtn { flex: none; }
@@ -299,6 +300,11 @@ p { margin: 6px 0; }
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; margin: 8px 0;
 }
 .target .tg-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.target .tg-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.target .tg-main { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.target .tg-none { font-size: 17px; font-weight: 600; }
+.target .tg-info { flex: none; }
+.target { padding: 10px 14px; }
 .target .tg-lbl { font-size: 13px; color: var(--text2); font-weight: 600; }
 .target .tg-val { font-size: 22px; font-weight: 700; line-height: 1.3; }
 .target details { margin-top: 4px; }
@@ -308,6 +314,9 @@ p { margin: 6px 0; }
 .target details[open] summary .gi { transform: rotate(180deg); }
 .target .reason { font-size: 14px; color: var(--text2); margin: 0 0 4px; }
 .target .reason.caution { color: #5C3F00; }
+.coach-note { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; line-height: 1.45; color: #5C3F00; background: #F6EBD5; border-radius: 10px; padding: 8px 10px; margin: 8px 0 0; }
+.coach-note .gi { flex: none; margin-top: 2px; }
+.coach-note.live { margin: 8px 0; }
 .prevline { font-size: 14px; color: var(--text2); margin: 2px 0 0; }
 
 /* ตารางจด: ยืนยัน / เซต / ครั้งก่อน / น้ำหนัก / reps */
@@ -371,6 +380,13 @@ p { margin: 6px 0; }
 
 /* ---------- ฟอร์ม ---------- */
 .form { margin-top: 6px; }
+.form .chips.wrap { margin: 2px 0 8px; }
+.adv-toggle { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 52px; margin: 14px 0 6px; padding: 8px 12px; text-align: left; background: var(--surface); border: 1.5px solid var(--line-strong); border-radius: 14px; color: var(--text); font: inherit; }
+.adv-toggle .adv-t { font-weight: 700; font-size: 16px; }
+.adv-toggle .adv-s { flex: 1; min-width: 0; font-size: 14px; color: var(--text2); text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.adv-toggle .gi { flex: none; transition: transform .15s; }
+.adv-toggle[aria-expanded="true"] .gi { transform: rotate(180deg); }
+.form-cta { margin-top: 16px; }
 .fl { display: block; font-size: 14px; font-weight: 600; color: var(--text2); margin: 16px 0 6px; }
 .form input[type="text"], .form input[type="search"], .form select, .field {
   width: 100%; height: 52px; padding: 0 14px; font-size: 17px; font-weight: 500;
@@ -568,7 +584,19 @@ p { margin: 6px 0; }
 .today-card .tc-meta { font-size: 14px; color: var(--text2); margin: 6px 0 10px; }
 .today-card .pc-icons { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
 .today-card .btn-row { margin-top: 12px; }
-.today-card .btn-row > .btn:first-child { flex: 1.6; }
+.today-card .btn-row > .btn:first-child { flex: 1; }
+.today-card .tc-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: -4px -6px 0 0; }
+.today-card .tc-meta { margin: 4px 0 10px; }
+.home-actions { display: flex; gap: 10px; margin: 10px 0 4px; }
+.home-actions .btn { flex: 1; }
+.wk-head { align-items: center; }
+.wk-head .wk-count { margin-left: auto; margin-right: 6px; }
+.wk-edit { flex: none; }
+.slot-row { display: flex; align-items: center; gap: 10px; min-height: 52px; border-bottom: 1px solid var(--line); }
+.slot-row:last-of-type { border-bottom: 0; }
+.slot-n { flex: none; width: 26px; height: 26px; border-radius: 50%; background: var(--accent-soft); color: var(--text); font-weight: 700; font-size: 14px; display: inline-flex; align-align: center; align-items: center; justify-content: center; }
+.slot-t { flex: 1; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+.slot-btns { display: flex; gap: 6px; flex: none; }
 .week-card { padding: 14px 12px 12px; }
 .wk-head { display: flex; align-items: baseline; justify-content: space-between; padding: 0 4px; }
 .wk-head h3 { margin: 0; }

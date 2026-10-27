@@ -133,15 +133,89 @@ test('ลดน้ำหนักไม่ติดลบ (น้ำหนัก
   assert.strictEqual(t.kind, 'hold');
 });
 
-test('น้ำหนักผสมหลายค่า → เสนอระมัดระวัง ไม่เพิ่มน้ำหนัก และแจ้งข้อจำกัด', () => {
+test('1.7 น้ำหนักผสม: ตัดสินจากเซตที่อ่อนสุด เซตเบาถึง ceiling → เพิ่มน้ำหนักจากค่าต่ำสุด', () => {
   const t = suggest([session('2026-10-01', sets([[40, 12], [40, 12], [37.5, 12]]))]);
-  assert.strictEqual(t.kind, 'mixed'); assert.strictEqual(t.weight, 40); assert.strictEqual(t.reps, 12);
-  assert.ok(/หลายค่า/.test(t.reason) && /ไม่เสนอเพิ่มน้ำหนัก/.test(t.reason));
+  assert.strictEqual(t.kind, 'add_weight'); assert.strictEqual(t.weight, 40); assert.strictEqual(t.reps, 8);
+  assert.ok(/37\.5/.test(t.reason));
 });
 
-test('น้ำหนักผสม จำนวนเท่ากัน → เลือกค่าที่เบากว่า', () => {
+test('1.7 น้ำหนักผสม จำนวนเท่ากัน → ใช้ค่าต่ำสุดเป็นน้ำหนักทำงาน และให้เป้า reps +1', () => {
   const t = suggest([session('2026-10-01', sets([[40, 10], [42.5, 9], [45, 8]]))]);
-  assert.strictEqual(t.kind, 'mixed'); assert.strictEqual(t.weight, 40);
+  assert.strictEqual(t.kind, 'mixed'); assert.strictEqual(t.weight, 40); assert.strictEqual(t.reps, 11);
+});
+
+test('1.7 เคสของผู้ใช้: เซตแรกหนัก เซตหลังลดน้ำหนัก (70×8, 55×8, 55×7) → 55 ทุกเซต เป้า 8 และแนะนำหยุดก่อนสุดแรง', () => {
+  const t = suggest([session('2026-10-01', sets([[70, 8], [55, 8], [55, 7]]))]);
+  assert.strictEqual(t.kind, 'mixed'); assert.strictEqual(t.weight, 55); assert.strictEqual(t.reps, 8);
+  assert.ok(/อ่อนสุด/.test(t.reason) && /1–2 reps/.test(t.reason) && /70 \/ 55/.test(t.reason));
+});
+
+test('1.7 เซตแรกหนักกว่า ไม่ทำให้ได้เครดิตเพิ่มน้ำหนัก ถ้าเซตอ่อนสุดยังไม่ถึง ceiling', () => {
+  const t = suggest([session('2026-10-01', sets([[70, 12], [55, 10], [55, 9]]))]);
+  assert.notStrictEqual(t.kind, 'add_weight'); assert.strictEqual(t.weight, 55);
+});
+
+test('1.7 เซตอ่อนสุดต่ำกว่าช่วง reps ในเคสผสม → ใช้น้ำหนักต่ำสุด reps ต้นช่วง ไม่ลดน้ำหนักเอง', () => {
+  const t = suggest([session('2026-10-01', sets([[70, 8], [55, 6], [55, 5]]))]);
+  assert.strictEqual(t.kind, 'mixed'); assert.strictEqual(t.weight, 55); assert.strictEqual(t.reps, 8);
+});
+
+test('1.7 เคสผสมแต่จดไม่ครบเซต → ไม่เสนอเพิ่มน้ำหนักแม้เซตอ่อนสุดถึง ceiling', () => {
+  const t = suggest([session('2026-10-01', sets([[70, 12], [55, 12]]))]);
+  assert.strictEqual(t.kind, 'incomplete'); assert.strictEqual(t.weight, 55);
+});
+
+test('1.7 analyzeSets: เซตหลังเบากว่าเซตแรก ≥10% → heavyFirst + ข้อความแนะนำ', () => {
+  const a = P.analyzeSets(sets([[70, 8], [55, 8], [55, 7]]), EX);
+  assert.ok(a.heavyFirst && a.warn && /น้ำหนักเท่ากันทุกเซต/.test(a.text));
+  assert.ok(!P.analyzeSets(sets([[60, 10], [60, 9], [60, 8]]), EX).warn);
+  assert.ok(!P.analyzeSets(sets([[60, 10], [57.5, 10]]), EX).heavyFirst);   // เบาลงแค่ ~4%
+});
+
+test('1.7 analyzeSets: reps ตกแรง (≥40% และ ≥3 reps) ที่น้ำหนักเท่าเดิม → repDrop', () => {
+  assert.ok(P.analyzeSets(sets([[50, 12], [50, 7]]), EX).repDrop);
+  assert.ok(P.analyzeSets(sets([[50, 10], [50, 6]]), EX).repDrop);
+  assert.ok(!P.analyzeSets(sets([[50, 12], [50, 9], [50, 8]]), EX).warn);   // ตกตามปกติจากความล้า
+  assert.ok(P.analyzeSets(sets([[50, 8], [50, 6]]), EX).repDrop);           // ต่ำกว่าช่วง ทั้งที่เซตแรกอยู่ในช่วง
+  assert.ok(!P.analyzeSets(sets([[50, 6], [50, 5]]), EX).repDrop);          // เซตแรกก็ต่ำกว่าช่วงอยู่แล้ว
+});
+
+test('1.7 analyzeSets: เซตข้าม/warm-up/มีเซตเดียว ไม่เตือน', () => {
+  assert.ok(!P.analyzeSets(sets([[50, 12]]), EX).warn);
+  assert.ok(!P.analyzeSets(sets([[50, 12], 'skip', [50, 11]]), EX).warn);
+  const mixedKinds = sets([[20, 12]], 'warmup').concat(sets([[50, 10], [50, 9]]));
+  assert.ok(!P.analyzeSets(mixedKinds, EX).warn);
+  assert.ok(!P.analyzeSets(null, EX).warn);
+});
+
+test('1.7 progressed: ตัดสินจากเซตอ่อนสุด', () => {
+  assert.ok(P.progressed(sets([[60, 8], [60, 8]]), sets([[57.5, 10], [57.5, 10]])));          // น้ำหนักต่ำสุดขึ้น
+  assert.ok(!P.progressed(sets([[70, 8], [55, 8], [55, 7]]), sets([[60, 10], [60, 9], [60, 8]])));   // เซตแรกหนักขึ้น แต่เซตอ่อนสุดต่ำลง
+  assert.ok(P.progressed(sets([[60, 9], [60, 9]]), sets([[60, 8], [60, 8]])));                // reps ต่ำสุดขึ้น
+  assert.ok(P.progressed(sets([[60, 10], [60, 8]]), sets([[60, 9], [60, 8]])));               // reps ต่ำสุดเท่า แต่รวมมากขึ้น
+  assert.ok(!P.progressed(sets([[60, 8], [60, 8]]), sets([[60, 8], [60, 8]])));               // เท่าเดิม
+});
+
+test('1.7 stallStatus: ไม่ก้าวหน้า 3 ครั้งติด → stalled; มีก้าวหน้าคั่น → ไม่', () => {
+  const flat = [
+    session('2026-10-22', sets([[60, 9], [60, 8], [60, 8]])),
+    session('2026-10-15', sets([[60, 9], [60, 8], [60, 8]])),
+    session('2026-10-08', sets([[60, 9], [60, 9], [60, 8]])),
+    session('2026-10-01', sets([[60, 9], [60, 8], [60, 9]]))
+  ];
+  const st = P.stallStatus(flat, todayEntry, 'current');
+  assert.strictEqual(st.streak, 3); assert.ok(st.stalled && /3 ครั้งติด/.test(st.text));
+  const broken = [session('2026-10-22', sets([[62.5, 8], [62.5, 8]]))].concat(flat.slice(1));
+  assert.ok(!P.stallStatus(broken, todayEntry, 'current').stalled);
+  assert.ok(!P.stallStatus(flat.slice(0, 3), todayEntry, 'current').stalled);   // ประวัติไม่พอ
+  assert.ok(!P.stallStatus([], todayEntry, 'current').stalled);
+});
+
+test('1.7 stallStatus: ไม่นับ session ที่ค้างอยู่ และไม่ข้ามไปอุปกรณ์อื่น', () => {
+  const other = session('2026-10-22', sets([[100, 12]]), { entry: { equipment: 'Smith machine' } });
+  const cur = session('2026-10-29', sets([[60, 8]]), { status: 'active' });
+  const h = [cur, other, session('2026-10-15', sets([[60, 9]])), session('2026-10-08', sets([[60, 9]]))];
+  assert.strictEqual(P.stallStatus(h, todayEntry, 'current').sessions, 2);
 });
 
 test('ต่างอุปกรณ์/วิธีนับ → เทียบไม่ได้ ไม่เสนอตัวเลข', () => {
@@ -559,6 +633,56 @@ test('กราฟเส้น: ต้องมี ≥2 จุด, PR เป็�
   assert.ok(flat && !/NaN/.test(flat));
   const same = CH.line([{ date: '2026-03-01', value: 50 }, { date: '2026-03-01', value: 52 }]);
   assert.ok(!/NaN/.test(same), 'วันที่ซ้ำกันไม่ทำให้ตำแหน่ง X เป็น NaN');
+});
+
+/* ================= 1.8: แผนรายสัปดาห์ (ช่อง) ================= */
+const SL = ['p-push', 'p-pull', 'p-legs'];
+test('1.8 weekProgress: สัปดาห์ใหม่เริ่มที่ช่องแรกเสมอ แม้สัปดาห์ก่อนข้ามขา (ไม่ตามทวง)', () => {
+  // สัปดาห์ก่อน (19–25 ต.ค.): Push, Pull แต่ข้าม Legs → วันจันทร์ที่ 26 เริ่ม Push ใหม่
+  const list = [wk('2026-10-19', 'p-push', ['a'], ws(3)), wk('2026-10-21', 'p-pull', ['c'], ws(3))];
+  const r = SM.weekProgress(SL, list, '2026-10-26');
+  assert.strictEqual(r.next, 0); assert.strictEqual(r.doneCount, 0); assert.ok(!r.complete);
+});
+test('1.8 weekProgress: ช่องถัดไปคือช่องแรกที่ยังไม่ได้ทำของสัปดาห์นี้ (จ. Push, พ. Pull → ถัดไป Legs)', () => {
+  const list = [wk('2026-10-26', 'p-push', ['a'], ws(3)), wk('2026-10-28', 'p-pull', ['c'], ws(3))];
+  const r = SM.weekProgress(SL, list, '2026-10-29');
+  assert.strictEqual(r.next, 2); assert.strictEqual(r.doneCount, 2);
+  assert.deepStrictEqual(r.slots.map(function (x) { return x.done; }), [true, true, false]);
+});
+test('1.8 weekProgress: ทำข้ามลำดับได้ — ทำ Legs ก่อน → ถัดไปยังเป็น Push', () => {
+  const r = SM.weekProgress(SL, [wk('2026-10-26', 'p-legs', ['d'], ws(2))], '2026-10-27');
+  assert.strictEqual(r.next, 0); assert.deepStrictEqual(r.slots.map(function (x) { return x.done; }), [false, false, true]);
+});
+test('1.8 weekProgress: ครบทุกช่อง → complete และ next = null', () => {
+  const list = [wk('2026-10-26', 'p-push', ['a'], ws(3)), wk('2026-10-27', 'p-pull', ['c'], ws(3)), wk('2026-10-28', 'p-legs', ['d'], ws(3))];
+  const r = SM.weekProgress(SL, list, '2026-10-30');
+  assert.ok(r.complete); assert.strictEqual(r.next, null);
+});
+test('1.8 weekProgress: ซ้ำแผนได้ (PPL×2 = 6 ช่อง) จับคู่ทีละช่องตามเวลา', () => {
+  const six = SL.concat(SL);
+  const list = [wk('2026-10-26', 'p-push', ['a'], ws(3)), wk('2026-10-27', 'p-pull', ['c'], ws(3)), wk('2026-10-28', 'p-legs', ['d'], ws(3)), wk('2026-10-29', 'p-push', ['a'], ws(3))];
+  const r = SM.weekProgress(six, list, '2026-10-30');
+  assert.strictEqual(r.next, 4); assert.strictEqual(r.doneCount, 4);
+  const one = SM.weekProgress(SL, list, '2026-10-30');
+  assert.ok(one.complete, 'Push ครั้งที่ 2 เกินจำนวนช่อง ไม่นับ/ไม่ทำให้พัง');
+});
+test('1.8 weekProgress: ไม่นับ session ว่าง/ที่ค้าง/วันเสริมที่ไม่อยู่ในช่อง/สัปดาห์อื่น', () => {
+  const list = [wk('2026-10-26', 'p-push', ['a'], ws(0)), Object.assign(wk('2026-10-27', 'p-pull', ['c'], ws(2)), { status: 'active' }),
+    wk('2026-10-28', 'ppl-plan-extra', ['e'], ws(3)), wk('2026-11-02', 'p-legs', ['d'], ws(3)), wk('2026-10-25', 'p-legs', ['d'], ws(3))];
+  const r = SM.weekProgress(SL, list, '2026-10-29');
+  assert.strictEqual(r.doneCount, 0); assert.strictEqual(r.next, 0);
+});
+test('1.8 weekProgress: ไม่มีช่อง → ไม่ complete (ไม่ถือว่าครบ)', () => {
+  const r = SM.weekProgress([], [], '2026-10-29');
+  assert.ok(!r.complete); assert.strictEqual(r.next, null);
+});
+test('1.8 ลำดับแผนรายสัปดาห์ในไฟล์สำรอง: เก็บเมื่อเป็นรายการข้อความ, ไม่ถูกต้อง → ทิ้งทั้งค่า, ไม่มี → ไม่เพิ่มคีย์', () => {
+  const ok = ST.validateBackup(backupOf({ settings: { unit: 'kg', weekPlan: ['p1', 'p2', 'p1'] } }));
+  assert.deepStrictEqual(ok.clean.settings.weekPlan, ['p1', 'p2', 'p1']);
+  assert.deepStrictEqual(ST.validateBackup(backupOf({ settings: { unit: 'kg', weekPlan: [] } })).clean.settings.weekPlan, []);
+  assert.strictEqual(ST.validateBackup(backupOf({ settings: { unit: 'kg', weekPlan: ['p1', 5] } })).clean.settings.weekPlan, undefined);
+  assert.strictEqual(ST.validateBackup(backupOf({ settings: { unit: 'kg', weekPlan: 'p1' } })).clean.settings.weekPlan, undefined);
+  assert.strictEqual(Object.prototype.hasOwnProperty.call(ST.validateBackup(backupOf()).clean.settings, 'weekPlan'), false);
 });
 
 console.log('\n' + passed + '/' + (passed + failed) + ' ผ่าน');

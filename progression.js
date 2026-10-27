@@ -13,8 +13,9 @@
  *     - มีเซตต่ำกว่าขั้นต่ำของช่วง: ครั้งเดียวยังไม่ลดน้ำหนัก (ลองซ้ำ),
  *       ถ้าพลาดขั้นต่ำที่น้ำหนักเดิมติดกัน 2 ครั้งล่าสุด → เสนอลด 1 ขั้น
  *     - จดไม่ครบตามแผน (เช่นข้ามเซต) ต่อให้ถึง ceiling ก็ยังไม่เสนอเพิ่มน้ำหนัก
- *  4. ครั้งก่อนใช้น้ำหนักหลายค่า → เสนอแบบระมัดระวัง (น้ำหนักที่ทำบ่อยสุด ไม่เพิ่มน้ำหนัก)
- *     และบอกข้อจำกัด ไม่คิดสูตรเทียบจาก volume อย่างเดียว
+ *  4. (1.7) ครั้งก่อนใช้น้ำหนักหลายค่า → ตัดสินจาก "เซตที่อ่อนสุด" (น้ำหนักต่ำสุด) ใช้น้ำหนักนั้นเท่ากันทุกเซต
+ *     แล้วใช้กติกาข้อ 3 กับเซตที่น้ำหนักนั้น (เซตแรกที่หนักกว่าไม่ถือเป็นความก้าวหน้า)
+ *     นอกจากนี้มี analyzeSets (เตือนเซตหลังตกแรง) และ stallStatus (ไม่ก้าวหน้า 3 ครั้งติด)
  *  5. ทุกคำแนะนำมีเหตุผลสั้น ๆ และเป็นเพียง "ค่าที่เสนอ" ผู้ใช้เลือกเองว่าจะทำตามหรือไม่
  *
  * เครดิต: กติกาข้อ "ลดน้ำหนักเมื่อพลาดขั้นต่ำติดกัน 2 ครั้ง" และ "เซตที่ข้ามไม่ถือเป็นความล้มเหลว"
@@ -112,30 +113,19 @@
     const distinct = [];
     sets.forEach(function (x) { if (!distinct.some(function (w) { return sameWeight(w, x.weight); })) distinct.push(x.weight); });
 
-    /* ----- น้ำหนักผสมหลายค่า: ไม่มีสูตรเทียบที่เชื่อถือได้ → เสนอแบบระมัดระวัง ----- */
-    if (distinct.length > 1) {
-      let best = null;
-      distinct.forEach(function (w) {
-        const n = sets.filter(function (x) { return sameWeight(x.weight, w); }).length;
-        if (!best || n > best.n || (n === best.n && w < best.w)) best = { w: w, n: n };
-      });
-      const atW = sets.filter(function (x) { return sameWeight(x.weight, best.w); });
-      const minReps = Math.min.apply(null, atW.map(function (x) { return x.reps; }));
-      const reps = Math.max(repMin, Math.min(repMax, minReps));
-      return {
-        weight: best.w, reps: reps, kind: 'mixed', basedOn: basedOn,
-        reason: 'ครั้งก่อนใช้น้ำหนักหลายค่า (' + distinct.map(fmt).join(', ') + ' kg) เทียบตรง ๆ ไม่ได้ ' +
-          'จึงเสนอแบบระมัดระวัง: ใช้ ' + fmt(best.w) + ' kg ที่ทำบ่อยสุด (ถ้าเท่ากันเลือกค่าที่เบากว่า) และไม่เสนอเพิ่มน้ำหนัก'
-      };
-    }
-
-    /* ----- น้ำหนักเดียวทุกเซต ----- */
-    const W = distinct[0];
-    const reps = sets.map(function (x) { return x.reps; });
+    /* ----- น้ำหนักผสมหลายค่า (1.7): ตัดสินจาก "เซตที่อ่อนสุด" ไม่ใช่เซตที่หนักสุด -----
+     * เซตแรกหนักแล้วเซตหลังต้องลดน้ำหนักไม่ถือเป็นความก้าวหน้า — ใช้น้ำหนักต่ำสุดที่ทำได้ตลอด
+     * เป็นน้ำหนักทำงาน แล้วให้กติกา double progression ทำงานต่อจากนั้นตามปกติ */
+    const mixed = distinct.length > 1;
+    const W = Math.min.apply(null, distinct);
+    const atW = sets.filter(function (x) { return sameWeight(x.weight, W); });
+    const reps = atW.map(function (x) { return x.reps; });
     const minReps = Math.min.apply(null, reps);
     const plannedLast = last.entry.plannedSets > 0 ? last.entry.plannedSets : (entry.plannedSets || sets.length);
     const incomplete = sets.length < plannedLast;
     const allAtCeiling = reps.every(function (r) { return r >= repMax; });
+    const wTxt = distinct.slice().sort(function (a, b) { return b - a; }).map(fmt).join(' / ');
+    const mixTail = ' เซตแรกควรหยุดก่อนสุดแรงราว 1–2 reps เพื่อให้เซตหลังไม่ตก';
     const missedMin = minReps < repMin;
 
     if (allAtCeiling) {
@@ -148,7 +138,18 @@
       }
       return {
         weight: round2(W + step), reps: repMin, kind: 'add_weight', basedOn: basedOn,
-        reason: 'ครั้งก่อนครบ ' + repMax + ' reps ทุกเซต จึงเสนอเพิ่มน้ำหนัก ' + fmt(step) + ' kg แล้วเริ่มที่ ' + repMin + ' reps'
+        reason: mixed
+          ? 'ครั้งก่อนใช้น้ำหนัก ' + wTxt + ' kg เซตที่อ่อนสุด (' + fmt(W) + ' kg) ถึง ' + repMax + ' reps ทุกเซต จึงเสนอเพิ่มเป็น ' +
+            fmt(round2(W + step)) + ' kg ทุกเซต แล้วเริ่มที่ ' + repMin + ' reps'
+          : 'ครั้งก่อนครบ ' + repMax + ' reps ทุกเซต จึงเสนอเพิ่มน้ำหนัก ' + fmt(step) + ' kg แล้วเริ่มที่ ' + repMin + ' reps'
+      };
+    }
+
+    if (missedMin && mixed) {
+      return {
+        weight: W, reps: repMin, kind: 'mixed', basedOn: basedOn,
+        reason: 'ครั้งก่อนใช้น้ำหนัก ' + wTxt + ' kg เซตที่อ่อนสุด (' + fmt(W) + ' kg) ทำได้ต่ำกว่า ' + repMin + ' reps จึงเสนอใช้ ' +
+          fmt(W) + ' kg ทุกเซตก่อน' + mixTail
       };
     }
 
@@ -168,9 +169,88 @@
     }
 
     const target = Math.min(repMax, minReps + 1);
+    if (mixed) {
+      return {
+        weight: W, reps: target, kind: 'mixed', basedOn: basedOn,
+        reason: 'ครั้งก่อนใช้น้ำหนัก ' + wTxt + ' kg แอปตัดสินจากเซตที่อ่อนสุด (' + fmt(W) + ' kg × ' + minReps + ' reps) ' +
+          'จึงเสนอใช้ ' + fmt(W) + ' kg เท่ากันทุกเซต เป้า ' + target + ' reps แล้วค่อยเพิ่มตามปกติ —' + mixTail
+      };
+    }
     return {
       weight: W, reps: target, kind: 'add_reps', basedOn: basedOn,
       reason: 'ครั้งก่อนทำได้ ' + repsText(sets) + ' reps ที่ ' + fmt(W) + ' kg ยังไม่ถึง ' + repMax + ' ทุกเซต จึงเสนอเพิ่ม reps เป็น ' + target + ' ที่น้ำหนักเดิม'
+    };
+  }
+
+  /* ---------- 1.7: วิเคราะห์รูปแบบเซตใน session เดียว (ไม่แตะข้อมูล) ----------
+   * ใช้แสดงคำเตือนระหว่างจด และคำแนะนำตอนดูครั้งก่อน เป็นคำแนะนำเท่านั้น ผู้ใช้เลือกเอง
+   * - heavyFirst: เซตหลังเบากว่าเซตแรกตั้งแต่ HEAVY_DROP (10%) ขึ้นไป
+   * - repDrop: น้ำหนักเท่าเดิมแต่ reps ตกตั้งแต่ 40% และอย่างน้อย 3 reps จากเซตแรก
+   *            หรือเซตหลังต่ำกว่าช่วง reps ทั้งที่เซตแรกอยู่ในช่วง
+   * (reps ตกบ้างในเซตหลังเป็นเรื่องปกติจากความล้า จึงตั้งเกณฑ์ไว้ที่ตกแรงเท่านั้น) */
+  const HEAVY_DROP = 0.10, REP_DROP_FRAC = 0.40, REP_DROP_MIN = 3;
+  const TIP = 'ครั้งหน้าลองใช้น้ำหนักเท่ากันทุกเซต และหยุดเซตแรกก่อนสุดแรงราว 1–2 reps';
+
+  function analyzeSets(sets, ex) {
+    const repMin = ex && ex.repMin > 0 ? ex.repMin : 8;
+    const out = { heavyFirst: false, repDrop: false, warn: false, text: '', short: '' };
+    const w = (sets || []).filter(function (x) { return x.kind === 'working' && x.status === 'completed'; });
+    if (w.length < 2) return out;
+    const f = w[0];
+    const later = w.slice(1);
+    out.heavyFirst = later.some(function (x) { return x.weight <= f.weight * (1 - HEAVY_DROP) + 1e-9; });
+    let worst = null;
+    later.forEach(function (x) {
+      if (!sameWeight(x.weight, f.weight)) return;
+      const drop = f.reps - x.reps;
+      const big = drop >= REP_DROP_MIN && x.reps <= f.reps * (1 - REP_DROP_FRAC) + 1e-9;
+      const below = x.reps < repMin && f.reps >= repMin;
+      if ((big || below) && (!worst || x.reps < worst.reps)) worst = x;
+    });
+    out.repDrop = !!worst;
+    out.warn = out.heavyFirst || out.repDrop;
+    if (out.repDrop) {
+      out.short = 'reps ตกแรง ' + f.reps + ' → ' + worst.reps + ' · ครั้งหน้าเหลือเซตแรก 1–2 reps';
+      out.text = 'reps ตกแรงจากเซตแรก (' + f.reps + ' → ' + worst.reps + ') เซตแรกอาจใกล้สุดแรงเกินไป — ' + TIP;
+    } else if (out.heavyFirst) {
+      out.short = 'เซตแรกหนักกว่าเซตหลัง · ครั้งหน้าใช้น้ำหนักเท่ากันทุกเซต';
+      out.text = 'เซตแรกหนักกว่าเซตหลัง — ' + TIP;
+    }
+    return out;
+  }
+
+  /* ความก้าวหน้า session ใหม่เทียบ session ก่อนหน้า ตัดสินจาก "เซตที่อ่อนสุด":
+   * น้ำหนักต่ำสุดสูงขึ้น = ก้าวหน้า, ต่ำลง = ไม่; เท่ากัน → reps ต่ำสุดสูงขึ้น หรือเท่ากันแต่ reps รวมมากขึ้น */
+  function progressed(a, b) {
+    function m(sets) {
+      return {
+        wMin: Math.min.apply(null, sets.map(function (x) { return x.weight; })),
+        rMin: Math.min.apply(null, sets.map(function (x) { return x.reps; })),
+        rSum: sets.reduce(function (n, x) { return n + x.reps; }, 0)
+      };
+    }
+    const A = m(a), B = m(b);
+    if (A.wMin > B.wMin + 0.001) return true;
+    if (A.wMin < B.wMin - 0.001) return false;
+    if (A.rMin !== B.rMin) return A.rMin > B.rMin;
+    return A.rSum > B.rSum;
+  }
+
+  /* ไม่ก้าวหน้าติดกันกี่ครั้ง (ท่า+อุปกรณ์เดียวกัน, ไม่รวม session ที่ค้าง) — need ครั้งขึ้นไป = stalled */
+  function stallStatus(workouts, entry, excludeWorkoutId, need) {
+    const n = need > 0 ? need : 3;
+    const same = sessionsOf(workouts, entry, excludeWorkoutId).same;
+    let streak = 0;
+    for (let i = 0; i + 1 < same.length; i++) {
+      if (progressed(same[i].sets, same[i + 1].sets)) break;
+      streak++;
+    }
+    return {
+      streak: streak, sessions: same.length, stalled: streak >= n,
+      text: streak >= n
+        ? 'ไม่ก้าวหน้า ' + streak + ' ครั้งติดแล้ว (น้ำหนักต่ำสุดและ reps ไม่ขึ้น) ลองเช็กการนอน/ความเครียด ' +
+          'พักเบาลดน้ำหนักราว 10% แล้วไต่ใหม่ หรือเปลี่ยนช่วง reps ของท่านี้'
+        : ''
     };
   }
 
@@ -180,7 +260,11 @@
     findPrevious: findPrevious,
     suggestTarget: suggestTarget,
     sortNewestFirst: sortNewestFirst,
-    sameBasis: sameBasis
+    sameBasis: sameBasis,
+    analyzeSets: analyzeSets,
+    progressed: progressed,
+    stallStatus: stallStatus,
+    TIP: TIP
   };
   global.GymProgression = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

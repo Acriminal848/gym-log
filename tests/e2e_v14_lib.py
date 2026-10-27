@@ -29,7 +29,7 @@ def new_page(b, w=390, h=844, sw='block', offline=False):
     pg.on('pageerror', lambda e: pg.errors.append(str(e)))
     pg.on('console', lambda m: pg.errors.append('console:' + m.text) if m.type == 'error' else None)
     pg.goto(BASE + 'index.html')
-    pg.wait_for_selector('.plan-row')
+    pg.wait_for_selector('.today-card, .session-bar')
     return pg
 
 def db(pg, store):
@@ -39,7 +39,9 @@ def workouts(pg):
     return db(pg, 'workouts')
 
 def open_plan(pg, name):
-    pg.click('.plan-row:has-text("%s")' % name)
+    # 1.8: รายการแผนอยู่ในแผ่น “แผนอื่น”
+    pg.click('[data-action=plans-sheet]'); pg.wait_for_selector('.sheet .plan-row')
+    pg.click('.sheet .plan-row:has-text("%s")' % name)
     pg.wait_for_selector('[data-action=start-plan]')
 
 def start_plan(pg, name):
@@ -55,7 +57,7 @@ def tab(pg, name):
 
 def go_home(pg):
     tab(pg, 'home')
-    pg.wait_for_selector('.plan-row')
+    pg.wait_for_selector('.today-card, .session-bar')
 
 def fill(pg, row, w, r):
     pg.fill('input[data-pending="%d"][data-field=weight]' % row, str(w))

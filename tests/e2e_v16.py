@@ -41,7 +41,7 @@ def main():
             seed(pg, -dow - 7 * (5 - k) , 'p%d' % k, 'ppl-plan-push', 3, [0, 5, 5, 2.5, 10, 15][k])
         seed(pg, -dow, 'q1', 'ppl-plan-pull', 3, 0)
         seed(pg, -dow + 0, 'q2', 'ppl-plan-legs', 2, 0)
-        pg.reload(); pg.wait_for_selector('.plan-row')
+        pg.reload(); pg.wait_for_selector('.today-card, .session-bar')
         hist(pg, 'overview')
         txt = pg.inner_text('#view')
         check('P4 ภาพรวม: มีหัวสัปดาห์ + “เซตต่อกล้ามเนื้อ” + คำอธิบายว่านับเซตตรง', 'เซตต่อกล้ามเนื้อ' in txt and 'เซตตรง' in txt and 'สัปดาห์นี้' in txt)
@@ -93,7 +93,7 @@ def main():
         check('P25 รายครั้ง: รายการ session ที่จบแล้ว (8)', pg.locator('[data-action=open-detail]').count() == 8, pg.locator('[data-action=open-detail]').count())
         # ----- สรุปหลังจบ
         go_home(pg)
-        pg.click('.today-card .btn'); pg.wait_for_selector('.sets')
+        start_plan(pg, 'Push'); pg.wait_for_selector('.sets')
         # ทำ 2 ท่าแรกจนครบ โดยท่าแรกหนักกว่าเดิม (ทำสถิติใหม่)
         ex1 = pg.evaluate("GL.state.active.entries[0].exerciseName"); heavy = 200
         for _ in range(3):
@@ -108,9 +108,9 @@ def main():
         # เลย์เอาต์
         for (w_, h_) in ((375, 667), (430, 932)):
             ctx = b.new_context(viewport={'width': w_, 'height': h_}, locale='th-TH', service_workers='block')
-            pg2 = ctx.new_page(); pg2.goto(BASE + 'index.html'); pg2.wait_for_selector('.plan-row')
+            pg2 = ctx.new_page(); pg2.goto(BASE + 'index.html'); pg2.wait_for_selector('.today-card, .session-bar')
             pg2.evaluate("""async (ids) => { for (const w of ids) await GymStorage.put('workouts', w); }""", [w for w in workouts(pg)])
-            pg2.reload(); pg2.wait_for_selector('.plan-row'); pg2.click('#tabs [data-tab=history]'); pg2.wait_for_selector('.cg')
+            pg2.reload(); pg2.wait_for_selector('.today-card, .session-bar'); pg2.click('#tabs [data-tab=history]'); pg2.wait_for_selector('.cg')
             check('Y1 %dx%d ภาพรวมไม่เลื่อนแนวนอน และตารางไม่ล้นจอ' % (w_, h_), pg2.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth") and pg2.evaluate("() => document.querySelector('table.cg').getBoundingClientRect().right <= window.innerWidth"))
             pg2.click('[data-action=his-mode][data-mode=exercises]'); pg2.click('[data-action=sum-open][data-ex=ppl-incline-chest-press]'); pg2.wait_for_selector('svg.chart')
             check('Y2 %dx%d หน้ากราฟไม่เลื่อนแนวนอน' % (w_, h_), pg2.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth"))
