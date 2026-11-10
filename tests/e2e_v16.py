@@ -46,7 +46,7 @@ def main():
         txt = pg.inner_text('#view')
         check('P4 ภาพรวม: มีหัวสัปดาห์ + “เซตต่อกล้ามเนื้อ” + คำอธิบายว่านับเซตตรง', 'เซตต่อกล้ามเนื้อ' in txt and 'เซตตรง' in txt and 'สัปดาห์นี้' in txt)
         rows = pg.locator('.mb-row').count()
-        check('P5 แสดงกล้ามเนื้อตามโปรแกรม (≥10 กลุ่ม) และใช้ชื่อแยกใหม่ (ไหล่ข้าง/ไหล่หลัง/ต้นขาหน้า/ต้นขาหลัง)', rows >= 10 and all(n in txt for n in ('ไหล่ข้าง', 'ไหล่หลัง', 'ต้นขาหน้า', 'ต้นขาหลัง')) and '\nไหล่\n' not in txt, rows)
+        check('P5 (1.9) แสดงเป็นหมวดใหญ่ ≥8 แถว + ส่วนย่อย (ไหล่ข้าง/ไหล่หลัง/ต้นขาหน้า/ต้นขาหลัง/อกบน/ปีกหลัง) ตามโปรแกรม', rows >= 8 and all(n in txt for n in ('ไหล่ข้าง', 'ไหล่หลัง', 'ต้นขาหน้า', 'ต้นขาหลัง', 'อกบน', 'ปีกหลัง')), rows)
         def row(name):
             r = pg.locator('.mb-row', has=pg.locator('.mb-name', has_text=name)).first
             return r.inner_text().replace('\n', ' ')
@@ -70,7 +70,7 @@ def main():
         pg.click('[data-action=set-toggle][data-key=showTargets]'); pg.wait_for_timeout(200)
         check('P16 ตั้งค่า: เปิดเส้นอ้างอิง → เก็บ showTargets=true', {r['key']: r['value'] for r in db(pg, 'settings')}.get('showTargets') is True)
         hist(pg, 'overview')
-        check('P17 เปิดเส้นอ้างอิง: มีขีด 10/20 ต่อกล้ามเนื้อ + ข้อความ “ไม่ใช่เป้า”', pg.locator('.mb-mark').count() >= 2 * 10 and 'ไม่ใช่เป้า' in pg.inner_text('.ov-card'))
+        check('P17 เปิดเส้นอ้างอิง: มีขีด 10/20 ต่อกล้ามเนื้อ + ข้อความ “ไม่ใช่เป้า”', pg.locator('.mb-mark').count() >= 2 * 8 and 'ไม่ใช่เป้า' in pg.inner_text('.ov-card'))
         go_home(pg); pg.click('[data-action=open-settings]'); pg.wait_for_selector('.rest-presets')
         pg.click('[data-action=set-toggle][data-key=showTargets]'); pg.wait_for_timeout(150)
         # ----- รายท่า + กราฟ

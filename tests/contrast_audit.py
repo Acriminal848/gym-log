@@ -30,6 +30,7 @@ JS_COLLECT = """() => {
     if (!hit || !(el.contains(hit) || hit.contains(el))) continue;   // ถูกบัง (เช่น แถบเมนู/ปุ่มล่าง/แผ่นเลื่อน) หรืออยู่ในส่วนที่ซ่อน
     if (b.bottom < 0 || b.top > innerHeight || b.right < 0 || b.left > innerWidth) continue;
     out.push({t: t.slice(0, 40), color: cs.color, op, fs: parseFloat(cs.fontSize), fw: parseInt(cs.fontWeight), x: b.left, y: b.top, w: b.width, h: b.height, cls: el.className || el.tagName});
+    if (el instanceof SVGElement) { out[out.length - 1].color = cs.fill; out[out.length - 1].cls = 'svg-text'; }
   }
   // placeholder ของช่องกรอก
   root.querySelectorAll('input, textarea').forEach(i => {
@@ -52,7 +53,7 @@ def lum(rgb): return 0.2126 * lin(rgb[0]) + 0.7152 * lin(rgb[1]) + 0.0722 * lin(
 def ratio(a, b):
     la, lb = lum(a), lum(b); hi, lo = max(la, lb), min(la, lb); return (hi + 0.05) / (lo + 0.05)
 
-HIDE = "*{color:transparent!important;text-shadow:none!important;-webkit-text-fill-color:transparent!important} ::placeholder{color:transparent!important;-webkit-text-fill-color:transparent!important} svg *{} "
+HIDE = "*{color:transparent!important;text-shadow:none!important;-webkit-text-fill-color:transparent!important} ::placeholder{color:transparent!important;-webkit-text-fill-color:transparent!important} svg text{fill:transparent!important;stroke:none!important} "
 bad_all = []; total = 0; worst = []
 
 def audit(pg, name):
@@ -109,6 +110,9 @@ with sync_playwright() as p:
     pg.fill('input[data-pending="0"][data-field=weight]', '60'); pg.fill('input[data-pending="0"][data-field=reps]', '10')
     pg.click('.cf.cur'); pg.wait_for_timeout(200); audit(pg, 'session-after-confirm(undo+carry)')
     audit(pg, 'session+rest-bar')
+    pg.evaluate("() => { const e = GL.state.active.entries[0]; GL.state.stepOffer = { entryId: e.id, exId: e.exerciseId, step: 7.5 }; GL.render(); }"); pg.wait_for_selector('.step-offer'); audit(pg, 'session-step-offer(1.9)')
+    pg.click('[data-action=step-offer-no]'); pg.wait_for_timeout(150)
+    pg.click('[data-action=step-edit]'); pg.wait_for_selector('#step-in'); pg.fill('#step-in', '3'); audit(pg, 'sheet-step(1.9)'); pg.mouse.click(195, 30); pg.wait_for_timeout(150)
     pg.click('[data-action=entry-menu]'); pg.wait_for_selector('.sheet'); audit(pg, 'sheet-entry-menu')
     pg.click('[data-action=add-ex]'); pg.wait_for_selector('#pick-q'); audit(pg, 'sheet-add-ex')
     pg.click('.create-cta'); pg.wait_for_selector('#qx-name'); audit(pg, 'sheet-quick-create'); pg.mouse.click(195, 30); pg.wait_for_timeout(100)
@@ -131,6 +135,9 @@ with sync_playwright() as p:
     audit(pg, 'history-overview')
     pg.click('[data-action=his-week][data-d="-1"]'); pg.wait_for_timeout(100); audit(pg, 'history-overview(สัปดาห์ก่อน)')
     pg.click('[data-action=his-mode][data-mode=exercises]'); pg.wait_for_timeout(100); audit(pg, 'history-by-exercise')
+    pg.evaluate("async () => { const pl=(await GymStorage.getAll('plans')).find(p=>p.id==='ppl-plan-push'); const exs=await GymStorage.getAll('exercises'); const ex=exs.find(e=>e.id===pl.items[0].exerciseId); for (let i=1;i<=5;i++){ const d=new Date(); d.setDate(d.getDate()-i*4); const k=GL.localDateKey(d); await GymStorage.put('workouts',{id:'tr'+i,date:k,status:'finished',startedAt:k+'T08:00:00Z',finishedAt:k+'T09:00:00Z',planId:pl.id,planName:pl.name,entries:[{id:'tr'+i+'e',plannedExerciseId:ex.id,plannedExerciseName:ex.name,exerciseId:ex.id,exerciseName:ex.name,equipment:ex.equipment,weightMode:ex.weightMode,plannedSets:3,target:null,draft:null,drafts:[],sets:[{id:'tr'+i+'s',kind:'working',status:'completed',weight:30+i*2.5,reps:10,at:k+'T08:30:00Z'}]}]}); } await GL.reload?.(); }")
+    pg.reload(); pg.wait_for_selector('.today-card, .session-bar'); tabgo(pg, 'history'); pg.click('[data-action=his-mode][data-mode=exercises]'); pg.click('[data-action=sum-open] >> nth=0'); pg.wait_for_selector('.stat-row'); pg.wait_for_timeout(200); pg.evaluate('window.scrollTo(0, 260)'); pg.wait_for_timeout(150); audit(pg, 'exercise-trend(chart 1.9)')
+    pg.click('.topbar .back'); pg.wait_for_timeout(150)
     pg.click('[data-action=his-mode][data-mode=sessions]')
     pg.click('[data-action=open-detail] >> nth=0'); pg.wait_for_selector('.setline'); audit(pg, 'workout-detail')
     tabgo(pg, 'home'); pg.wait_for_selector('.today-card'); pg.click('[data-action=wk-edit]'); pg.wait_for_timeout(250); audit(pg, 'week-editor')
@@ -140,6 +147,7 @@ with sync_playwright() as p:
     pg.mouse.click(195, 30); pg.wait_for_timeout(100)
     pg.goto(BASE + 'index.html'); pg.wait_for_selector('.today-card, .session-bar')
     tabgo(pg, 'exercises'); pg.wait_for_selector('#ex-q'); pg.click('[data-action=ex-new]'); pg.wait_for_selector('#ef-name'); audit(pg, 'exercise-edit(new)')
+    pg.click('[data-action=muscle-pick][data-v=หลัง]'); audit(pg, 'exercise-edit(muscle sub chips 1.9)')
     pg.click('[data-action=ex-adv]'); audit(pg, 'exercise-edit(ตั้งค่าเพิ่มเติมเปิด)')
     pg.click('[data-action=icon-pick][data-v=curl]'); audit(pg, 'exercise-edit(icon picked)')
     tabgo(pg, 'home'); 

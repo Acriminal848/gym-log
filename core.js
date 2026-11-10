@@ -11,7 +11,7 @@
 
   const GL = window.GL = {
     S: window.GymStorage, P: window.GymProgression, SM: window.GymSummary, I: window.GymIcons, PG: window.GymProgram,
-    APP_VERSION: '1.8.0',
+    APP_VERSION: '1.9.0',
     views: {}
   };
   const S = GL.S, P = GL.P, SM = GL.SM;
@@ -30,7 +30,7 @@
   GL.DEFAULT_MUSCLES = ['อก', 'หลัง', 'ไหล่ข้าง', 'ไหล่หลัง', 'ต้นขาหน้า', 'ต้นขาหลัง', 'ก้น', 'ไบเซ็ป', 'ไตรเซ็ป', 'หน้าท้อง', 'น่อง', 'ปลายแขน'];
 
   /* ---------- การตั้งค่า (เก็บใน settings store ทีละ key — ไม่ต้องเปลี่ยนโครงฐานข้อมูล) ---------- */
-  GL.DEFAULTS = { restSeconds: 90, restAuto: true, restSound: true, keepAwake: true, showTargets: false };
+  GL.DEFAULTS = { restSeconds: 90, restAuto: true, restSound: true, keepAwake: true, showTargets: false, restKeepAlive: false };
   GL.REST_PRESETS = [60, 90, 120, 180];
   GL.setting = function (key) {
     const v = window.GL.state.settings[key];
@@ -98,7 +98,7 @@
     busy: false,
     hisMode: 'overview',        // overview | exercises | sessions
     hisWeek: 0,                 // 0 = สัปดาห์นี้, -1 = สัปดาห์ก่อน ...
-    sumMode: 'ex', sumView: 'session', trendMetric: 'top',
+    sumMode: 'ex', sumView: 'session', trendMetric: 'work', stepOffer: null,
     exQuery: '', exMuscle: '',
     lastFinishedId: null,
     rest: null,                 // ตัวจับเวลาพัก { total, endsAt, announced } (อยู่ในหน่วยความจำเท่านั้น)
@@ -372,15 +372,19 @@
   GL.plansUsing = function (id) {
     return state.plans.filter(function (p) { return p.items.some(function (it) { return it.exerciseId === id; }); });
   };
-  GL.muscleOptions = function () {
+  // 1.9: หมวดใหญ่ (เลือก/ค้นหา/กรอง) → ส่วนย่อย (ดูว่าส่วนไหนยังไม่ถูกกระตุ้น) — ท่าเก็บ muscle ค่าเดียวเหมือนเดิม
+  GL.majorOf = function (m) { return SM.majorOf(m); };
+  GL.muscleKey = function (ex) { return SM.muscleKey(ex); };
+  GL.exMajor = function (ex) { return SM.majorOf(ex && ex.muscle); };
+  GL.muscleOptions = function () {          // หมวดใหญ่ตามลำดับ + หมวดที่ผู้ใช้พิมพ์เองที่ยังมีท่าใช้อยู่
     const seen = {}, out = [];
-    GL.DEFAULT_MUSCLES.forEach(function (m) { seen[m] = true; out.push(m); });
-    state.exercises.forEach(function (e) { if (e.muscle && !seen[e.muscle]) { seen[e.muscle] = true; out.push(e.muscle); } });
+    SM.TREE.forEach(function (t) { seen[t.major] = true; out.push(t.major); });
+    state.exercises.forEach(function (e) { const M = SM.majorOf(e.muscle); if (e.muscle && !seen[M]) { seen[M] = true; out.push(M); } });
     return out;
   };
   GL.groupByMuscle = function (list) {
     const groups = {};
-    list.forEach(function (e) { const g = e.muscle || 'อื่น ๆ'; (groups[g] = groups[g] || []).push(e); });
+    list.forEach(function (e) { const g = GL.exMajor(e); (groups[g] = groups[g] || []).push(e); });
     const order = GL.muscleOptions().filter(function (m) { return groups[m]; });
     Object.keys(groups).forEach(function (g) { if (order.indexOf(g) < 0) order.push(g); });
     return order.map(function (g) { return { muscle: g, items: groups[g].sort(GL.byName) }; });

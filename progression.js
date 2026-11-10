@@ -129,6 +129,16 @@
     const missedMin = minReps < repMin;
 
     if (allAtCeiling) {
+      /* 1.9: น้ำหนักผสม — เซตที่น้ำหนักทำงาน (เซตอ่อนสุด) ถึงเพดานแค่ “บางเซต” (เช่น 12 kg ทำได้แค่เซตแรก 15 reps แล้วเซตอื่นไปหนัก 18 kg)
+       * ยังพิสูจน์ไม่ได้ว่าทำได้ทุกเซต จึงไม่เพิ่มน้ำหนัก — เสนอให้ทำทุกเซตที่น้ำหนักทำงานให้ถึงเพดานก่อน */
+      const heavierMissed = sets.some(function (x) { return x.reps < repMax; });   // เซตที่หนักกว่าไม่ถึงเพดาน
+      if (mixed && heavierMissed && atW.length < plannedLast) {
+        return {
+          weight: W, reps: repMax, kind: 'mixed', basedOn: basedOn,
+          reason: 'ครั้งก่อนใช้น้ำหนัก ' + wTxt + ' kg น้ำหนักที่ทำได้ ' + repMax + ' reps มีเฉพาะ ' + fmt(W) + ' kg (' + atW.length + ' จาก ' + plannedLast +
+            ' เซต) จึงเสนอใช้ ' + fmt(W) + ' kg ทุกเซต เป้า ' + repMax + ' reps ทุกเซต ถึงเป้าแล้วค่อยเพิ่มน้ำหนัก' + mixTail
+        };
+      }
       if (incomplete) {
         return {
           weight: W, reps: repMax, kind: 'incomplete', basedOn: basedOn,
@@ -219,21 +229,98 @@
     return out;
   }
 
+  /* เซตที่อ่อนสุด (1.9): น้ำหนักต่ำสุด + reps "ที่น้ำหนักนั้น" เท่านั้น
+   * (เซตที่หนักกว่าแล้ว reps ตก เช่น 18 kg × 8 ไม่ลาก reps ต่ำสุดของน้ำหนักทำงานลงมา) */
+  function weakest(sets) {
+    const wMin = Math.min.apply(null, sets.map(function (x) { return x.weight; }));
+    const at = sets.filter(function (x) { return sameWeight(x.weight, wMin); });
+    return {
+      wMin: wMin,
+      rMin: Math.min.apply(null, at.map(function (x) { return x.reps; })),
+      rSum: at.reduce(function (n, x) { return n + x.reps; }, 0)
+    };
+  }
+
   /* ความก้าวหน้า session ใหม่เทียบ session ก่อนหน้า ตัดสินจาก "เซตที่อ่อนสุด":
-   * น้ำหนักต่ำสุดสูงขึ้น = ก้าวหน้า, ต่ำลง = ไม่; เท่ากัน → reps ต่ำสุดสูงขึ้น หรือเท่ากันแต่ reps รวมมากขึ้น */
+   * น้ำหนักต่ำสุดสูงขึ้น = ก้าวหน้า, ต่ำลง = ไม่; เท่ากัน → reps ต่ำสุด (ที่น้ำหนักนั้น) สูงขึ้น หรือเท่ากันแต่ reps รวมมากขึ้น */
   function progressed(a, b) {
-    function m(sets) {
-      return {
-        wMin: Math.min.apply(null, sets.map(function (x) { return x.weight; })),
-        rMin: Math.min.apply(null, sets.map(function (x) { return x.reps; })),
-        rSum: sets.reduce(function (n, x) { return n + x.reps; }, 0)
-      };
-    }
-    const A = m(a), B = m(b);
+    const A = weakest(a), B = weakest(b);
     if (A.wMin > B.wMin + 0.001) return true;
     if (A.wMin < B.wMin - 0.001) return false;
     if (A.rMin !== B.rMin) return A.rMin > B.rMin;
     return A.rSum > B.rSum;
+  }
+
+  /* ตัวตัดสินเดียวของทั้งแอป (1.9) — ใช้บนหน้าสรุปหลังจบ
+   *  cur/prev: เซต working ที่ทำเสร็จ (ใหม่/ครั้งก่อน, ท่า+อุปกรณ์เดียวกัน); target: entry.target ที่แอปเสนอวันนั้น (หรือ null)
+   *  state: 'up' ก้าวหน้า | 'same' ทรงตัว | 'reset' ตั้งหลักใหม่ตามเป้า (น้ำหนักทำงานลดลงแต่ทำครบตามเป้าที่แอปเสนอ) | 'down' ต่ำกว่าครั้งก่อน
+   *  onTarget: ทุกเซตถึงน้ำหนัก/reps ที่เสนอ
+   *  ไม่ใช้ "น้ำหนักเซตที่หนักที่สุด" ตัดสินอีก — เซตแรกที่หนักเกินแล้วต้องลดไม่ควรทำให้ครั้งต่อไปดูเหมือนถอยหลัง */
+  function verdict(cur, prev, target, ex) {
+    if (!cur || !cur.length || !prev || !prev.length) return null;
+    // reps เกินเพดานของช่วง (repMax) ถือว่าเท่ากับเพดาน — ถึงเพดานแล้วเป้าคือเพิ่มน้ำหนัก ไม่ใช่เพิ่ม reps ต่อ
+    const cap = ex && ex.repMax > 0 ? ex.repMax : null;
+    if (cap) {
+      const lim = function (a) { return a.map(function (x) { return { weight: x.weight, reps: Math.min(x.reps, cap) }; }); };
+      cur = lim(cur); prev = lim(prev);
+    }
+    const C = weakest(cur), Pv = weakest(prev);
+    let onTarget = false;
+    if (target && target.weight != null && target.reps != null) {
+      onTarget = cur.every(function (x) { return x.weight >= target.weight - 0.001 && x.reps >= target.reps; });
+    }
+    let st = 'same', detail = '';
+    if (progressed(cur, prev)) {
+      st = 'up';
+      detail = C.wMin > Pv.wMin + 0.001
+        ? 'น้ำหนักทำงาน ' + fmt(Pv.wMin) + ' → ' + fmt(C.wMin) + ' kg'
+        : (C.rMin !== Pv.rMin ? 'เซตอ่อนสุดที่ ' + fmt(C.wMin) + ' kg: ' + Pv.rMin + ' → ' + C.rMin + ' reps' : 'ที่ ' + fmt(C.wMin) + ' kg ทำได้ ' + C.rSum + ' reps รวม (ครั้งก่อน ' + Pv.rSum + ')');
+    } else if (C.wMin < Pv.wMin - 0.001 || C.rMin < Pv.rMin || (C.rMin === Pv.rMin && C.rSum < Pv.rSum)) {
+      if (onTarget && C.wMin < Pv.wMin - 0.001) { st = 'reset'; detail = 'น้ำหนักทำงาน ' + fmt(Pv.wMin) + ' → ' + fmt(C.wMin) + ' kg · ทำครบตามเป้า'; }
+      else {
+        st = 'down';
+        detail = C.wMin < Pv.wMin - 0.001
+          ? 'น้ำหนักทำงาน ' + fmt(Pv.wMin) + ' → ' + fmt(C.wMin) + ' kg'
+          : 'เซตอ่อนสุดที่ ' + fmt(C.wMin) + ' kg: ' + Pv.rMin + ' → ' + C.rMin + ' reps';
+      }
+    }
+    return { state: st, onTarget: onTarget, detail: detail, work: C.wMin, prevWork: Pv.wMin };
+  }
+
+  /* ---------- ขั้นน้ำหนักของเครื่อง (1.9) ----------
+   * เดาจากน้ำหนักที่เคยจดจริง: ผลต่างระหว่างน้ำหนักที่ต่างกัน → ตัวหารร่วมมาก (ละเอียดสุด 0.25)
+   * เสนอเฉพาะเมื่อน้ำหนักที่เคยใช้ "ไม่ลงตัวกับขั้นปัจจุบัน" (ขั้นปัจจุบันน่าจะผิด) และได้ค่า 1–25 kg
+   * weights: น้ำหนักที่ทำเสร็จของท่า+อุปกรณ์เดียวกัน (ไม่รวม warm-up) */
+  function gcdInt(a, b) { a = Math.abs(a); b = Math.abs(b); while (b) { const t = a % b; a = b; b = t; } return a; }
+  function inferStep(weights, currentStep) {
+    const q = [];
+    (weights || []).forEach(function (w) {
+      if (!(w > 0) || !isFinite(w)) return;
+      const k = Math.round(w * 4);
+      if (Math.abs(k / 4 - w) > 0.001) return;       // น้ำหนักที่ไม่ลงตัว 0.25 → ไม่เอามาเดา
+      if (q.indexOf(k) < 0) q.push(k);
+    });
+    if (q.length < 2) return null;
+    q.sort(function (a, b) { return a - b; });
+    let g = 0;
+    for (let i = 1; i < q.length; i++) g = gcdInt(g, q[i] - q[i - 1]);
+    const inferred = g / 4;
+    if (inferred < 1 || inferred > 25) return null;
+    const cur = currentStep > 0 ? currentStep : 2.5;
+    const curQ = Math.round(cur * 4);
+    const fits = q.every(function (k, i) { return i === 0 || (k - q[0]) % curQ === 0; });
+    if (fits) return null;                           // ขั้นปัจจุบันอธิบายน้ำหนักที่ใช้ได้อยู่แล้ว
+    if (Math.abs(inferred - cur) < 0.001) return null;
+    return inferred;
+  }
+
+  /* น้ำหนักที่เคยทำเสร็จของท่า+อุปกรณ์เดียวกัน (session ล่าสุดก่อน, สูงสุด n session) รวมเซตของ entry ปัจจุบันถ้าส่งมา */
+  function weightsOf(workouts, entry, n, excludeWorkoutId) {
+    const same = sessionsOf(workouts, entry, excludeWorkoutId).same.slice(0, n > 0 ? n : 6);
+    const out = [];
+    same.forEach(function (r) { r.sets.forEach(function (x) { out.push(x.weight); }); });
+    workingCompleted(entry).forEach(function (x) { out.push(x.weight); });
+    return out;
   }
 
   /* ไม่ก้าวหน้าติดกันกี่ครั้ง (ท่า+อุปกรณ์เดียวกัน, ไม่รวม session ที่ค้าง) — need ครั้งขึ้นไป = stalled */
@@ -263,6 +350,10 @@
     sameBasis: sameBasis,
     analyzeSets: analyzeSets,
     progressed: progressed,
+    weakest: weakest,
+    verdict: verdict,
+    inferStep: inferStep,
+    weightsOf: weightsOf,
     stallStatus: stallStatus,
     TIP: TIP
   };

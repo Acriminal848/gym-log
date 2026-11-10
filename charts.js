@@ -77,7 +77,11 @@
 
     const prN = points.filter(function (p) { return p.pr; }).length;
     const label = (opts.label || 'แนวโน้ม') + ': จาก ' + fmtNum(first.value) + ' เป็น ' + fmtNum(last.value) + ' ' + unit + ' ใน ' + points.length + ' ครั้ง' + (prN ? ' · สถิติใหม่ ' + prN + ' ครั้ง' : '');
-    return '<svg class="chart" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + esc(label) + '" preserveAspectRatio="xMidYMid meet"><title>' + esc(label) + '</title>' + g + '</svg>';
+    // 1.9: แตะ/ลากบนกราฟ → เส้นแนวตั้ง + จุดเน้น + ข้อความค่า (data-r = [x, y, ข้อความ] ต่อจุด; app.js เป็นตัวจัดการ)
+    const readout = opts.readout || function (p) { return fmtDate(p.date) + ' · ' + fmtNum(p.value) + ' ' + unit; };
+    const rd = points.map(function (p, i) { return [Math.round(X(p, i) * 10) / 10, Math.round(Y(p.value) * 10) / 10, readout(p, i)]; });
+    g += '<g class="ch-cross" aria-hidden="true" visibility="hidden"><line x1="0" x2="0" y1="' + pad.t + '" y2="' + (pad.t + ih) + '" class="ch-cl"/><circle cx="0" cy="0" r="6" class="ch-cd"/></g>';
+    return '<svg class="chart" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + esc(label) + '" preserveAspectRatio="xMidYMid meet" data-w="' + W + '" data-r="' + esc(JSON.stringify(rd)) + '"><title>' + esc(label) + '</title>' + g + '</svg>';
   }
 
   const api = { line: line, niceRange: niceRange };

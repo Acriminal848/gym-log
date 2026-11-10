@@ -187,6 +187,41 @@
     return { weekStart: ws, days: days, sessions: count };
   }
 
+  /* ---------- 1.9: หมวดกล้ามเนื้อ ใหญ่ → ย่อย (ไม่แก้ข้อมูลเดิม) ----------
+   * ท่าเก็บค่า muscle ค่าเดียวเหมือนเดิม: จะเป็น “หมวดใหญ่” (เช่น อก) หรือ “ส่วนย่อย” (เช่น อกบน) ก็ได้
+   * หมวดใหญ่ใช้เลือก/ค้นหา/กรอง (เห็นทุกท่าในหมวด) ส่วนย่อยใช้ดูว่าส่วนไหนยังไม่ถูกกระตุ้น
+   * ค่าเดิม (ไหล่ข้าง, ต้นขาหน้า ฯลฯ) ถูกจัดเป็นส่วนย่อยของหมวดใหญ่โดยอัตโนมัติ ตอนแสดงผลเท่านั้น */
+  const TREE = [
+    { major: 'อก', subs: ['อกบน', 'อกกลาง', 'อกล่าง'] },
+    { major: 'หลัง', subs: ['ปีกหลัง', 'กลางหลัง', 'หลังล่าง', 'บ่า'] },
+    { major: 'ไหล่', subs: ['ไหล่หน้า', 'ไหล่ข้าง', 'ไหล่หลัง'] },
+    { major: 'ไบเซ็ป', subs: [] },
+    { major: 'ไตรเซ็ป', subs: [] },
+    { major: 'ขา', subs: ['ต้นขาหน้า', 'ต้นขาหลัง', 'ก้น', 'ต้นขาด้านใน', 'ต้นขาด้านนอก'] },
+    { major: 'น่อง', subs: [] },
+    { major: 'หน้าท้อง', subs: [] },
+    { major: 'ปลายแขน', subs: [] }
+  ];
+  const MAJOR_OF = {};
+  TREE.forEach(function (t) { MAJOR_OF[t.major] = t.major; t.subs.forEach(function (x) { MAJOR_OF[x] = t.major; }); });
+  // ส่วนย่อยตั้งต้นของท่าตัวอย่าง (ใช้เมื่อท่านั้นยังเก็บเป็นหมวดใหญ่ล้วน ๆ — อ่านอย่างเดียว ไม่เขียนลงข้อมูล)
+  const SUB_DEFAULT = {
+    'ppl-incline-chest-press': 'อกบน', 'ppl-smith-incline-press': 'อกบน',
+    'ppl-flat-chest-press': 'อกกลาง', 'ppl-flat-chest-press-b': 'อกกลาง', 'ppl-pec-deck': 'อกกลาง', 'ppl-cable-fly': 'อกกลาง',
+    'ppl-lat-pulldown': 'ปีกหลัง', 'ppl-single-arm-high-row': 'ปีกหลัง',
+    'ppl-single-arm-row': 'กลางหลัง', 'ppl-seated-cable-row-close': 'กลางหลัง', 'ppl-tbar-row-close': 'กลางหลัง',
+    'ppl-seated-cable-row-wide': 'กลางหลัง', 'ppl-tbar-row-wide': 'กลางหลัง'
+  };
+  function majorOf(m) { return m ? (MAJOR_OF[m] || m) : 'อื่น ๆ'; }
+  function isSub(m) { return !!m && !!MAJOR_OF[m] && MAJOR_OF[m] !== m; }
+  function subsOf(major) { const t = TREE.filter(function (x) { return x.major === major; })[0]; return t ? t.subs.slice() : []; }
+  // กุญแจกล้ามเนื้อสำหรับนับเซต: ส่วนย่อยถ้ามี (ที่ผู้ใช้ตั้ง หรือค่าตั้งต้นของท่าตัวอย่าง) ไม่งั้นค่าที่เก็บไว้
+  function muscleKey(ex) {
+    if (!ex || !ex.muscle) return null;
+    if (SUB_DEFAULT[ex.id] && MAJOR_OF[ex.muscle] === ex.muscle && ex.muscle === MAJOR_OF[SUB_DEFAULT[ex.id]]) return SUB_DEFAULT[ex.id];
+    return ex.muscle;
+  }
+
   // จำนวนเซตทำงานที่ทำเสร็จของแต่ละกล้ามเนื้อในสัปดาห์ (นับเซตต่อกล้ามเนื้อหลักของท่า — เฉพาะ “เซตตรง”)
   // exById: ฟังก์ชันหาท่าจาก id (ถ้าท่าถูกลบไปแล้ว จะข้าม)
   function muscleSets(workouts, exById, weekStartKey) {
@@ -195,7 +230,7 @@
       if (w.status !== 'finished' || w.date < weekStartKey || w.date > end) return;
       w.entries.forEach(function (e) {
         const ex = exById(e.exerciseId);
-        const m = ex && ex.muscle ? ex.muscle : null;
+        const m = muscleKey(ex);
         const n = completedWorking(e).length;
         if (m && n) out[m] = (out[m] || 0) + n;
       });
@@ -209,7 +244,8 @@
     rotation.forEach(function (p) {
       p.items.forEach(function (it) {
         const ex = exById(it.exerciseId);
-        if (ex && !ex.archived && ex.muscle && !seen[ex.muscle]) { seen[ex.muscle] = true; order.push(ex.muscle); }
+        const k = muscleKey(ex);
+        if (ex && !ex.archived && k && !seen[k]) { seen[k] = true; order.push(k); }
       });
     });
     return order.filter(function (m) { return !trained[m]; });
@@ -228,7 +264,7 @@
       const seen = {};
       w.entries.forEach(function (e) {
         const ex = exById(e.exerciseId);
-        const m = ex && ex.muscle ? ex.muscle : null;
+        const m = muscleKey(ex);
         const n = completedWorking(e).length;
         if (!m || !n) return;
         const x = out[m] || (out[m] = { sets: 0, sessions: 0 });
@@ -240,7 +276,7 @@
   }
 
   // จุดแนวโน้มของกลุ่มอุปกรณ์เดียว (sessionsNewestFirst จาก exerciseHistory().sessions)
-  // metric: 'top' = น้ำหนักเซตหนักสุด | 'e1rm' = 1RM โดยประมาณสูงสุดของครั้งนั้น
+  // metric: 'work' = น้ำหนักทำงาน (เซตอ่อนสุด) | 'top' = น้ำหนักเซตหนักสุด | 'e1rm' = 1RM โดยประมาณสูงสุดของครั้งนั้น
   // คืนเก่า → ใหม่; pr = ทำลายสถิติเดิมของกลุ่มนี้ (ครั้งแรกไม่ถือเป็น PR)
   function exerciseTrend(sessionsNewestFirst, metric) {
     const asc = sessionsNewestFirst.slice().reverse();
@@ -251,6 +287,10 @@
       if (metric === 'e1rm') {
         v = 0; r.sets.forEach(function (s) { const x = e1rm(s.weight, s.reps); if (x > v) { v = x; } });
         label = null;
+      } else if (metric === 'work') {
+        // 1.9: น้ำหนักทำงาน = น้ำหนักของเซตที่อ่อนสุด (น้ำหนักต่ำสุด) — reps = ต่ำสุดที่น้ำหนักนั้น
+        v = Math.min.apply(null, r.sets.map(function (x) { return x.weight; }));
+        label = Math.min.apply(null, r.sets.filter(function (x) { return Math.abs(x.weight - v) < 0.001; }).map(function (x) { return x.reps; }));
       } else { v = r.top.weight; label = r.top.reps; }
       const pr = best !== null && v > best + 1e-9;
       if (best === null || v > best) best = v;
@@ -315,6 +355,45 @@
     return out;
   }
 
+  // จำนวนครั้ง (session) ที่ได้เซตตรงต่อ “หมวดใหญ่” ในสัปดาห์ — นับ session ละครั้งต่อหมวดใหญ่ ไม่ซ้ำเมื่อโดนหลายส่วนย่อย
+  function majorSessions(workouts, exById, weekStartKey) {
+    const end = weekEnd(weekStartKey), out = {};
+    workouts.forEach(function (w) {
+      if (w.status !== 'finished' || w.date < weekStartKey || w.date > end) return;
+      const seen = {};
+      w.entries.forEach(function (e) {
+        const M = majorOf(muscleKey(exById(e.exerciseId)));
+        if (!M || !completedWorking(e).length || seen[M]) return;
+        seen[M] = true; out[M] = (out[M] || 0) + 1;
+      });
+    });
+    return out;
+  }
+
+  /* จัดกลุ่มนับเซตตามหมวดใหญ่ + ส่วนย่อย สำหรับภาพรวมรายสัปดาห์
+   * keys: กุญแจกล้ามเนื้อที่เกี่ยวข้อง (จากแผน/ท่าที่มี) · sets: { key: จำนวนเซต } · majorSess: { หมวดใหญ่: ครั้ง }
+   * ส่วนย่อยที่ไม่มีเซตจะแสดง (เป็น 0) เฉพาะหมวดใหญ่ที่มีท่าที่ระบุส่วนย่อยแล้วอย่างน้อย 1 ส่วน
+   * คืน [{ major, sets, subs: [{ key, sets }] }] เรียงตามลำดับหมวดใหญ่ */
+  function muscleGroups(keys, sets, majorSess) {
+    const all = {}; keys.concat(Object.keys(sets)).forEach(function (k) { all[k] = true; });
+    const byMajor = {};
+    Object.keys(all).forEach(function (k) { const M = majorOf(k); (byMajor[M] = byMajor[M] || []).push(k); });
+    const majors = TREE.map(function (t) { return t.major; });
+    Object.keys(byMajor).forEach(function (M) { if (majors.indexOf(M) < 0) majors.push(M); });
+    return majors.filter(function (M) { return byMajor[M]; }).map(function (M) {
+      const ks = byMajor[M];
+      const subKeys = ks.filter(isSub);
+      const g = { major: M, sets: 0, sessions: 0, subs: [], generic: 0 };
+      ks.forEach(function (k) { g.sets += sets[k] || 0; });
+      g.sessions = (majorSess && majorSess[M]) || 0;
+      if (subKeys.length) {
+        subsOf(M).forEach(function (sx) { g.subs.push({ key: sx, sets: sets[sx] || 0 }); });
+        g.generic = sets[M] || 0;   // เซตที่ท่ายังไม่ระบุส่วนย่อย
+      }
+      return g;
+    });
+  }
+
   // ระยะเวลา session เป็นนาที (null ถ้าไม่มีเวลาเริ่ม/จบ หรือค่าผิดปกติ — เช่น ลืมกดจบข้ามวัน)
   function durationMin(w) {
     if (!w || !w.startedAt || !w.finishedAt) return null;
@@ -329,7 +408,8 @@
     const map = {};
     w.entries.forEach(function (e) {
       const ex = exById(e.exerciseId), n = completedWorking(e).length;
-      if (ex && ex.muscle && n) map[ex.muscle] = (map[ex.muscle] || 0) + n;
+      const k = muscleKey(ex);
+      if (k && n) map[k] = (map[k] || 0) + n;
     });
     return Object.keys(map).map(function (m) { return { muscle: m, sets: map[m] }; })
       .sort(function (a, b) { return b.sets - a.sets || String(a.muscle).localeCompare(String(b.muscle), 'th'); });
@@ -341,6 +421,7 @@
     weekStart: weekStart, weekEnd: weekEnd,
     rotationPlans: rotationPlans, nextInRotation: nextInRotation, weekProgress: weekProgress, weekStrip: weekStrip,
     muscleSets: muscleSets, untrainedMuscles: untrainedMuscles,
+    TREE: TREE, majorOf: majorOf, isSub: isSub, subsOf: subsOf, muscleKey: muscleKey, muscleGroups: muscleGroups, majorSessions: majorSessions,
     exerciseIndex: exerciseIndex, exerciseHistory: exerciseHistory, weeklyOverview: weeklyOverview
   };
   global.GymSummary = api;

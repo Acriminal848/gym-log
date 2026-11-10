@@ -160,6 +160,49 @@ test('1.7 เซตอ่อนสุดต่ำกว่าช่วง reps �
   assert.strictEqual(t.kind, 'mixed'); assert.strictEqual(t.weight, 55); assert.strictEqual(t.reps, 8);
 });
 
+test('1.9 เคส pec deck: 12×15, 18×11, 18×8 → เสนอ 12 kg ทุกเซต 15 reps (ไม่ใช่ 17 kg) เพราะ 12 kg พิสูจน์แค่ 1 จาก 3 เซต', () => {
+  const t = suggest([session('2026-10-01', sets([[12, 15], [18, 11], [18, 8]]))], { repMin: 8, repMax: 15, step: 5 });
+  assert.strictEqual(t.kind, 'mixed'); assert.strictEqual(t.weight, 12); assert.strictEqual(t.reps, 15);
+  assert.ok(/ทุกเซต/.test(t.reason));
+});
+
+test('1.9 ทำ 12 kg ครบ 3 เซต 15 reps แล้ว → ครั้งต่อไปเพิ่มน้ำหนัก (ผ่านสถานะผสมได้)', () => {
+  const t = suggest([session('2026-10-08', sets([[12, 15], [12, 15], [12, 15]])), session('2026-10-01', sets([[12, 15], [18, 11], [18, 8]]))], { repMin: 8, repMax: 15, step: 6 });
+  assert.strictEqual(t.kind, 'add_weight'); assert.strictEqual(t.weight, 18); assert.strictEqual(t.reps, 8);
+});
+
+test('1.9 verdict: ทำตามเป้า 12×15/15/15 หลัง 12/18/18 → ก้าวหน้า + ตามเป้า (ไม่ใช่ “ต่ำกว่า”)', () => {
+  const cur = sets([[12, 15], [12, 15], [12, 15]]), prev = sets([[12, 15], [18, 11], [18, 8]]);
+  const v = P.verdict(cur, prev, { weight: 12, reps: 15 });
+  assert.strictEqual(v.state, 'up'); assert.ok(v.onTarget);
+});
+
+test('1.9 verdict: ครั้งก่อนหนักเกิน (18×8/7/6) แอปเสนอ 12 แล้วทำครบ → “ตั้งหลักใหม่” ไม่ใช่ถอย; ลดเองโดยไม่ได้ตามเป้า → down', () => {
+  const prev = sets([[18, 8], [18, 7], [18, 6]]);
+  assert.strictEqual(P.verdict(sets([[12, 15], [12, 15], [12, 15]]), prev, { weight: 12, reps: 15 }).state, 'reset');
+  assert.strictEqual(P.verdict(sets([[10, 8], [10, 8], [10, 8]]), prev, { weight: 18, reps: 8 }).state, 'down');
+  assert.strictEqual(P.verdict(sets([[18, 8], [18, 7], [18, 6]]), prev, null).state, 'same');
+});
+
+test('1.9 verdict: ครั้งก่อน reps เกินเพดาน (12×15 ในช่วง 8–12) แล้วทำ 12×12 ตามเป้า → ไม่ถือเป็นถอย', () => {
+  const v = P.verdict(sets([[12, 12], [12, 12], [12, 12]]), sets([[12, 15], [18, 11], [18, 8]]), { weight: 12, reps: 12 }, { repMin: 8, repMax: 12 });
+  assert.strictEqual(v.state, 'up'); assert.ok(v.onTarget);
+});
+
+test('1.9 progressed: reps ต่ำสุดดูเฉพาะที่น้ำหนักทำงาน (เซตหนักกว่าที่ reps ตกไม่ลากลง)', () => {
+  assert.ok(P.progressed(sets([[12, 15], [12, 15], [12, 15]]), sets([[12, 15], [18, 11], [18, 8]])));
+  assert.ok(!P.progressed(sets([[12, 15], [12, 14]]), sets([[12, 15], [12, 15]])));
+});
+
+test('1.9 inferStep: 12 กับ 18 → ขั้น 6; ขั้นเดิมอธิบายได้ → ไม่เสนอ; น้ำหนักไม่ลงตัว/เซตเดียว → ไม่เสนอ', () => {
+  assert.strictEqual(P.inferStep([12, 18, 18], 5), 6);
+  assert.strictEqual(P.inferStep([12, 17], 5), null);
+  assert.strictEqual(P.inferStep([60, 62.5, 65], 2.5), null);
+  assert.strictEqual(P.inferStep([12, 12], 5), null);
+  assert.strictEqual(P.inferStep([12.3, 18], 5), null);
+  assert.strictEqual(P.inferStep([10, 20, 30], 2.5), null);   // 10 เป็นพหุคูณของ 2.5 → ขั้นเดิมยังอธิบายได้
+});
+
 test('1.7 เคสผสมแต่จดไม่ครบเซต → ไม่เสนอเพิ่มน้ำหนักแม้เซตอ่อนสุดถึง ceiling', () => {
   const t = suggest([session('2026-10-01', sets([[70, 12], [55, 12]]))]);
   assert.strictEqual(t.kind, 'incomplete'); assert.strictEqual(t.weight, 55);
@@ -683,6 +726,42 @@ test('1.8 ลำดับแผนรายสัปดาห์ในไฟล�
   assert.strictEqual(ST.validateBackup(backupOf({ settings: { unit: 'kg', weekPlan: ['p1', 5] } })).clean.settings.weekPlan, undefined);
   assert.strictEqual(ST.validateBackup(backupOf({ settings: { unit: 'kg', weekPlan: 'p1' } })).clean.settings.weekPlan, undefined);
   assert.strictEqual(Object.prototype.hasOwnProperty.call(ST.validateBackup(backupOf()).clean.settings, 'weekPlan'), false);
+});
+
+/* ================= 1.9: ไฟล์เสียง + ตั้งค่า restKeepAlive ================= */
+const CM = require('../chime.js');
+function wavInfo(b) {
+  const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  const tag = function (o) { return String.fromCharCode(b[o], b[o + 1], b[o + 2], b[o + 3]); };
+  return { riff: tag(0), wave: tag(8), fmt: tag(12), data: tag(36), fmtCode: dv.getUint16(20, true), ch: dv.getUint16(22, true), rate: dv.getUint32(24, true), bits: dv.getUint16(34, true),
+    riffLen: dv.getUint32(4, true), dataLen: dv.getUint32(40, true), dv: dv };
+}
+test('chime: ไฟล์ WAV ถูกต้อง (PCM 16 บิต mono 8 kHz) ความยาวข้อมูลตรงกับหัวไฟล์', () => {
+  const b = CM.chime(), w = wavInfo(b);
+  assert.deepStrictEqual([w.riff, w.wave, w.fmt, w.data], ['RIFF', 'WAVE', 'fmt ', 'data']);
+  assert.deepStrictEqual([w.fmtCode, w.ch, w.rate, w.bits], [1, 1, 8000, 16]);
+  assert.strictEqual(w.dataLen, b.length - 44); assert.strictEqual(w.riffLen, b.length - 8);
+  assert.ok(Math.abs(CM.chimeSeconds() - 1.76) < 0.01, CM.chimeSeconds());
+});
+test('chime: เสียงดังพอแต่ไม่แตก (peak ระหว่าง 0.6–1.0 ของ full scale)', () => {
+  const b = CM.chime(), w = wavInfo(b); let peak = 0;
+  for (let i = 0; i < w.dataLen / 2; i++) peak = Math.max(peak, Math.abs(w.dv.getInt16(44 + i * 2, true)));
+  assert.ok(peak > 0.6 * 32767 && peak <= 32767, peak);
+});
+test('restTrack: เงียบเท่าเวลาพักเป๊ะ แล้วตามด้วยเสียงเตือน, เกินเพดาน → null', () => {
+  const b = CM.restTrack(10), w = wavInfo(b);
+  assert.strictEqual(w.dataLen / 2, 10 * 8000 + Math.round(CM.chimeSeconds() * 8000));
+  for (let i = 0; i < 10 * 8000; i += 997) assert.strictEqual(w.dv.getInt16(44 + i * 2, true), 0, 'ช่วงเงียบต้องเป็นศูนย์ที่ ' + i);
+  let loud = 0; for (let i = 10 * 8000; i < w.dataLen / 2; i++) loud = Math.max(loud, Math.abs(w.dv.getInt16(44 + i * 2, true)));
+  assert.ok(loud > 0.6 * 32767, 'ท้ายไฟล์ต้องมีเสียง');
+  assert.strictEqual(CM.restTrack(CM.MAX_SEC + 1), null);
+  assert.ok(CM.restTrack(CM.MAX_SEC) !== null);
+  assert.ok(wavInfo(CM.restTrack(0)).dataLen / 2 >= 8000, 'ขั้นต่ำเงียบ 1 วินาที');
+});
+test('ตั้งค่า restKeepAlive: เก็บเมื่อเป็น boolean เท่านั้น และไม่เพิ่มคีย์เมื่อไม่มี', () => {
+  assert.strictEqual(ST.validateBackup(backupOf({ settings: { unit: 'kg', restKeepAlive: true } })).clean.settings.restKeepAlive, true);
+  assert.strictEqual(ST.validateBackup(backupOf({ settings: { unit: 'kg', restKeepAlive: 'on' } })).clean.settings.restKeepAlive, undefined);
+  assert.strictEqual(Object.prototype.hasOwnProperty.call(ST.validateBackup(backupOf()).clean.settings, 'restKeepAlive'), false);
 });
 
 console.log('\n' + passed + '/' + (passed + failed) + ' ผ่าน');

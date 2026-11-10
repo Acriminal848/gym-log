@@ -18,6 +18,12 @@ def check(n, c, e=''):
     if c: passed += 1; print('PASS', n)
     else: failed += 1; print('FAIL', n, e)
 
+def pick_plan(pg, name):
+    # 1.8+ แผนอยู่ในแผ่น “แผนอื่น”; เวอร์ชันเก่ากว่านั้นอยู่ในหน้าแรก
+    if pg.locator('[data-action=plans-sheet]').count():
+        pg.click('[data-action=plans-sheet]'); pg.wait_for_selector('.sheet .plan-row')
+    pg.click(PLANSEL + ':has-text("%s")' % name)
+
 STORES = ['exercises', 'plans', 'workouts']
 def snap(pg):
     d = {s: sorted(pg.evaluate("s => GymStorage.getAll(s)", s), key=lambda r: str(r.get('id'))) for s in STORES}
@@ -36,7 +42,7 @@ PLANSEL = '.plan-card' if 'plan-card' in open(os.path.join(OLD, 'views.js'), enc
 def to_home(pg):
     if not pg.locator('#tabs').is_visible():
         pg.click('.s-head .back'); pg.wait_for_selector('#tabs', state='visible')
-    pg.click('#tabs [data-tab=home]'); pg.wait_for_selector(PLANSEL)
+    pg.click('#tabs [data-tab=home]'); pg.wait_for_selector(PLANSEL + ', .today-card')
 
 try:
     ud = os.path.join(root, 'profile'); os.makedirs(ud)
@@ -45,21 +51,21 @@ try:
             c = p.chromium.launch_persistent_context(ud, viewport={'width': 390, 'height': 844}, service_workers='block')
             c.route('**/*', lambda r: r.continue_(headers={**r.request.headers, 'cache-control': 'no-cache'}))
             return c
-        c1 = ctx(); pg = c1.new_page(); pg.goto(URL); pg.wait_for_selector(PLANSEL); pg.wait_for_timeout(600)
+        c1 = ctx(); pg = c1.new_page(); pg.goto(URL); pg.wait_for_selector(PLANSEL + ', .today-card'); pg.wait_for_timeout(600)
         pg.evaluate("""async () => { const now = new Date().toISOString();
           await GymStorage.put('exercises', {id:'user-leg', name:'My Leg Curl (สมมติ)', muscle:'ขา', equipment:'เครื่อง', repMin:8, repMax:12, step:5, weightMode:'machine', subs:[], archived:false, isSample:false, createdAt:now});
           await GymStorage.put('exercises', {id:'user-shoulder', name:'My Shoulder (สมมติ)', muscle:'ไหล่', equipment:'ดัมเบล', repMin:8, repMax:12, step:2, weightMode:'dumbbell_each', subs:[], archived:false, isSample:false, createdAt:now});
           const lp = await GymStorage.get('exercises', 'ppl-leg-press'); lp.muscle = 'ขาที่ฉันตั้งเอง'; await GymStorage.put('exercises', lp);
           await GymStorage.put('exercises', {id:'user-extra', name:'My Extra Row (สมมติ)', muscle:'หลัง', equipment:'สายเคเบิล', repMin:8, repMax:12, step:2.5, weightMode:'cable', subs:[], archived:false, isSample:false, createdAt:now}); }""")
         # session 1 (จบแล้ว) ผ่านหน้าจอจริงของแอปเก่า
-        pg.reload(); pg.wait_for_selector(PLANSEL)
-        pg.click(PLANSEL + ':has-text("Pull")'); pg.click('[data-action=start-plan]'); pg.wait_for_selector('.sets')
+        pg.reload(); pg.wait_for_selector(PLANSEL + ', .today-card')
+        pick_plan(pg, 'Pull'); pg.click('[data-action=start-plan]'); pg.wait_for_selector('.sets')
         for w_, r_ in ((60, 10), (60, 9), (57.5, 9)):
             fill(pg, w_, r_); confirm(pg)
         pg.click('[data-action=manage]'); pg.click('[data-action=finish]'); pg.click('[data-action=finish-confirm]'); pg.wait_for_timeout(500)
         # session 2 (ค้างอยู่) + ค่าที่พิมพ์ค้างในช่อง
         to_home(pg)
-        pg.click(PLANSEL + ':has-text("Push")'); pg.click('[data-action=start-plan]'); pg.wait_for_selector('.sets')
+        pick_plan(pg, 'Push'); pg.click('[data-action=start-plan]'); pg.wait_for_selector('.sets')
         fill(pg, 80, 8); confirm(pg)
         fill(pg, 82.5, 7); confirm(pg)
         fill(pg, 70, 6)           # ยังไม่ยืนยัน = draft

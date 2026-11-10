@@ -275,6 +275,7 @@
         state.carry = { entryId: entryId, weight: weight, after: -1 };
         const slot = document.getElementById('carry-slot');
         if (slot) slot.innerHTML = V.carryHtml(entry);
+        maybeOfferStep(entry, w);
       }
     } finally { state.busy = false; }
   }
@@ -346,6 +347,37 @@
     GL.scheduleSave(w);
     dropUndo();
     if (field === 'weight') { state.carry = { entryId: entryId, weight: next, after: 0 }; const slot = document.getElementById('carry-slot'); if (slot) slot.innerHTML = V.carryHtml(entry); }
+  }
+
+  /* ----- ขั้นน้ำหนักต่อท่า (1.9) ----- */
+  let stepCtxEntry = null;
+
+  async function saveStep(exId, step, label) {
+    const ex = GL.exById(exId);
+    if (!ex) return false;
+    if (!(step > 0) || step > 500 || !isFinite(step)) { GL.toast('ขั้นน้ำหนักต้องมากกว่า 0 (ตัวเลข เช่น 2.5)', { error: true }); return false; }
+    step = Math.round(step * 100) / 100;
+    const rec = Object.assign({}, ex, { step: step });
+    try { await S.put('exercises', rec); }
+    catch (e) { GL.toast('บันทึกขั้นน้ำหนักไม่สำเร็จ', { error: true }); return false; }
+    Object.assign(ex, rec);
+    state.stepOffer = null;
+    render();
+    GL.toast((label || 'ตั้งขั้นน้ำหนัก') + ' ' + fmtNum(step) + ' kg แล้ว — ใช้กับปุ่ม ± และเป้าหมายครั้งหน้า');
+    return true;
+  }
+
+  // หลังยืนยันเซต: ถ้าน้ำหนักที่เคยจดไม่ลงตัวกับขั้นปัจจุบัน → เสนอขั้นที่แอปเดาได้ (ครั้งเดียวต่อท่า ปิดแล้วไม่ถามอีก)
+  function maybeOfferStep(entry, w) {
+    const ex = GL.exById(entry.exerciseId);
+    const dismissed = GL.setting('stepDismissed') || [];
+    state.stepOffer = null;
+    if (ex && dismissed.indexOf(ex.id) < 0 && entry.weightMode !== 'bodyweight') {
+      const inferred = P.inferStep(P.weightsOf(state.workouts, entry, 6, w.id), ex.step);
+      if (inferred) state.stepOffer = { entryId: entry.id, exId: ex.id, step: inferred };
+    }
+    const slot = document.getElementById('step-offer-slot');
+    if (slot) slot.innerHTML = V.stepOfferHtml(entry);
   }
 
   function carryApply(entryId) {
@@ -994,6 +1026,20 @@
       case 'skip-set': skipSet(d.entry); break;
       case 'more-set': moreSet(d.entry); break;
       case 'add-warmup': openWarmup(d.entry); break;
+      case 'step-edit': stepCtxEntry = d.entry; GL.openSheet(V.stepSheet(d.entry)); break;
+      case 'step-set': { const en = activeEntry(stepCtxEntry); if (en) { GL.closeSheet(); saveStep(en.exerciseId, Number(d.v)); } break; }
+      case 'step-save': {
+        const en = activeEntry(d.entry || stepCtxEntry), inp = document.getElementById('step-in');
+        if (en && inp) { const v = GL.parseWeight(inp.value); if (v === null || isNaN(v)) { GL.toast('ใส่ขั้นน้ำหนักเป็นตัวเลข เช่น 2.5', { error: true }); inp.focus(); break; } GL.closeSheet(); saveStep(en.exerciseId, v); }
+        break;
+      }
+      case 'step-offer-yes': { const o = state.stepOffer; if (o) saveStep(o.exId, o.step, 'ใช้ขั้น'); break; }
+      case 'step-offer-no': {
+        const o = state.stepOffer; state.stepOffer = null;
+        const slot = document.getElementById('step-offer-slot'); if (slot) slot.innerHTML = '';
+        if (o) { const list = (GL.setting('stepDismissed') || []).slice(); if (list.indexOf(o.exId) < 0) list.push(o.exId); saveSetting('stepDismissed', list.slice(-300)); }
+        break;
+      }
       case 'warmup-save': saveWarmup(d.entry); break;
       case 'bump': bump(d.entry, d.field, Number(d.dir)); break;
       case 'carry-apply': carryApply(d.entry); break;
@@ -1044,7 +1090,7 @@
       case 'his-back': nav('history', null); break;
       case 'his-mode': state.hisMode = d.mode; render(); break;
       case 'his-week': state.hisWeek = Math.min(0, (state.hisWeek || 0) + Number(d.d)); render(); break;
-      case 'trend-metric': state.trendMetric = d.v === 'e1rm' ? 'e1rm' : 'top'; render(); break;
+      case 'trend-metric': state.trendMetric = d.v === 'e1rm' ? 'e1rm' : d.v === 'top' ? 'top' : 'work'; render(); break;
       case 'delete-workout':
         GL.openSheet('<h3>ลบ workout นี้ออกจากประวัติ?</h3><p class="muted">ลบแล้วกู้คืนไม่ได้ (ถ้าไม่ได้สำรองไว้)</p>' +
           '<div class="stack"><button type="button" class="btn danger solid" data-action="delete-workout-confirm" data-id="' + esc(d.id) + '">ลบ</button>' +
@@ -1076,6 +1122,7 @@
       case 'ex-save': saveExercise(); break;
       case 'ex-muscle': state.exMuscle = d.v; render(); break;
       case 'muscle-pick': if (state.sub && state.sub.draft) { state.sub.draft.muscle = d.v; state.sub.dirty = true; render(); } break;
+      case 'muscle-sub': if (state.sub && state.sub.draft) { const dr = state.sub.draft; dr.muscle = d.v || GL.majorOf(dr.muscle); state.sub.dirty = true; render(); } break;
       case 'icon-pick': if (state.sub && state.sub.draft) { state.sub.draft.icon = d.v; state.sub.dirty = true; render(); } break;
       case 'ex-adv': if (state.sub && state.sub.draft) { state.sub.adv = !state.sub.adv; render(); } break;
       case 'ex-equip': if (state.sub && state.sub.draft) {
@@ -1133,6 +1180,34 @@
     }
   });
 
+  // 1.9: แตะ/ลากบนกราฟแนวโน้ม → เส้นแนวตั้ง + ข้อความค่าของครั้งนั้น (ไม่แตะข้อมูล ไม่ render ใหม่)
+  (function () {
+    let cur = null, rd = null;
+    function pick(svg, ev) {
+      const r = svg.getBoundingClientRect(), W = parseFloat(svg.getAttribute('data-w')) || 340;
+      const x = (ev.clientX - r.left) * (W / r.width);
+      let bi = 0, bd = 1e9;
+      rd.forEach(function (p, i) { const d = Math.abs(p[0] - x); if (d < bd) { bd = d; bi = i; } });
+      const g = svg.querySelector('.ch-cross');
+      if (!g) return;
+      g.setAttribute('visibility', 'visible');
+      const l = g.querySelector('line'), c = g.querySelector('circle');
+      l.setAttribute('x1', rd[bi][0]); l.setAttribute('x2', rd[bi][0]);
+      c.setAttribute('cx', rd[bi][0]); c.setAttribute('cy', rd[bi][1]);
+      const out = svg.parentNode.parentNode.querySelector('.chart-read');
+      if (out) out.textContent = rd[bi][2];
+    }
+    document.addEventListener('pointerdown', function (ev) {
+      const svg = ev.target && ev.target.closest ? ev.target.closest('svg.chart') : null;
+      if (!svg) return;
+      try { rd = JSON.parse(svg.getAttribute('data-r')); } catch (e) { rd = null; }
+      if (!rd || !rd.length) return;
+      cur = svg; pick(svg, ev);
+    });
+    document.addEventListener('pointermove', function (ev) { if (cur && rd) pick(cur, ev); });
+    ['pointerup', 'pointercancel'].forEach(function (n) { document.addEventListener(n, function () { cur = null; }); });
+  })();
+
   // พิมพ์ในช่องตาราง → เก็บเป็น draft (ยังไม่ใช่ผลจริง) ให้ปิดแอปแล้วกลับมาไม่หาย
   document.addEventListener('input', function (ev) {
     const t = ev.target;
@@ -1144,6 +1219,11 @@
       GL.setDraft(entry, Number(t.dataset.pending), t.dataset.field, t.value);
       GL.scheduleSave(w);
       dropUndo();
+      return;
+    }
+    if (t.id === 'step-in') {
+      const pv = document.getElementById('step-prev'), v = GL.parseWeight(t.value);
+      if (pv) pv.innerHTML = (v !== null && !isNaN(v) && v > 0) ? V.stepPreview(Number(t.dataset.base) || 0, v) : '&nbsp;';
       return;
     }
     if (t.dataset.qx && GL.sheetCtx && GL.sheetCtx.type === 'qx') { GL.sheetCtx.qx[t.dataset.qx] = t.value; return; }
