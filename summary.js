@@ -254,7 +254,10 @@
   /* ---------- 1.6: ภาพรวมกล้ามเนื้อ / แนวโน้มรายท่า / ตารางความสม่ำเสมอ / สรุปหลังจบ ---------- */
 
   // 1RM โดยประมาณ (Epley) — ใช้เทียบแนวโน้มของท่าเดียวกันเท่านั้น ไม่แม่นเมื่อ reps สูง
-  function e1rm(weight, reps) { return round2(weight * (1 + reps / 30)); }
+  // 2.1: ใช้เฉพาะเซต 1–12 reps (เกินนี้สูตรคลาดมาก) → เกินแล้วคืน null และข้ามเซตนั้น
+  const EST_MAX = 12;
+  function e1rm(weight, reps) { return weight > 0 && reps >= 1 && reps <= EST_MAX ? round2(weight * (1 + reps / 30)) : null; }
+  function PG() { return global.GymProgression || (typeof require === 'function' ? require('./progression.js') : null); }
 
   // เซตตรง + จำนวนครั้งที่ฝึก ต่อกล้ามเนื้อ ในสัปดาห์ที่เริ่มวัน weekStartKey: { 'อก': { sets, sessions } }
   function muscleWeek(workouts, exById, weekStartKey) {
@@ -278,19 +281,24 @@
   // จุดแนวโน้มของกลุ่มอุปกรณ์เดียว (sessionsNewestFirst จาก exerciseHistory().sessions)
   // metric: 'work' = น้ำหนักทำงาน (เซตอ่อนสุด) | 'top' = น้ำหนักเซตหนักสุด | 'e1rm' = 1RM โดยประมาณสูงสุดของครั้งนั้น
   // คืนเก่า → ใหม่; pr = ทำลายสถิติเดิมของกลุ่มนี้ (ครั้งแรกไม่ถือเป็น PR)
-  function exerciseTrend(sessionsNewestFirst, metric) {
+  function exerciseTrend(sessionsNewestFirst, metric, repMin) {
     const asc = sessionsNewestFirst.slice().reverse();
     const pts = [];
     let best = null;
     asc.forEach(function (r) {
       let v, label;
       if (metric === 'e1rm') {
-        v = 0; r.sets.forEach(function (s) { const x = e1rm(s.weight, s.reps); if (x > v) { v = x; } });
+        v = 0; r.sets.forEach(function (s) { const x = e1rm(s.weight, s.reps); if (x !== null && x > v) { v = x; } });
+        if (!(v > 0)) return;                    // ครั้งนั้นไม่มีเซต 1–12 reps ให้ประมาณ → ไม่ลงจุด
         label = null;
       } else if (metric === 'work') {
         // 1.9: น้ำหนักทำงาน = น้ำหนักของเซตที่อ่อนสุด (น้ำหนักต่ำสุด) — reps = ต่ำสุดที่น้ำหนักนั้น
-        v = Math.min.apply(null, r.sets.map(function (x) { return x.weight; }));
-        label = Math.min.apply(null, r.sets.filter(function (x) { return Math.abs(x.weight - v) < 0.001; }).map(function (x) { return x.reps; }));
+        const pg = PG(), rb = pg && repMin > 0 ? pg.rampBase(r.sets, repMin) : null;       // 2.1: ครั้งที่ไล่น้ำหนัก → เซตหนักสุดที่ยังไหว
+        if (rb) { v = rb.w; label = rb.minReps; }
+        else {
+          v = Math.min.apply(null, r.sets.map(function (x) { return x.weight; }));
+          label = Math.min.apply(null, r.sets.filter(function (x) { return Math.abs(x.weight - v) < 0.001; }).map(function (x) { return x.reps; }));
+        }
       } else { v = r.top.weight; label = r.top.reps; }
       const pr = best !== null && v > best + 1e-9;
       if (best === null || v > best) best = v;
@@ -345,12 +353,12 @@
       finishedRows(prior).forEach(function (r) {
         if (r.exerciseId !== e.exerciseId || r.basis !== row.basis) return;
         if (pTop === null || r.top.weight > pTop) pTop = r.top.weight;
-        r.sets.forEach(function (s) { const x = e1rm(s.weight, s.reps); if (pE === null || x > pE) pE = x; });
+        r.sets.forEach(function (s) { const x = e1rm(s.weight, s.reps); if (x !== null && (pE === null || x > pE)) pE = x; });
       });
       if (pTop === null) return;
-      let myE = 0; row.sets.forEach(function (s) { const x = e1rm(s.weight, s.reps); if (x > myE) myE = x; });
+      let myE = 0; row.sets.forEach(function (s) { const x = e1rm(s.weight, s.reps); if (x !== null && x > myE) myE = x; });
       if (row.top.weight > pTop + 1e-9) out.push({ exerciseId: e.exerciseId, name: e.exerciseName, kind: 'weight', value: row.top.weight, prev: pTop });
-      else if (myE > pE + 1e-9) out.push({ exerciseId: e.exerciseId, name: e.exerciseName, kind: 'e1rm', value: myE, prev: pE });
+      else if (pE !== null && myE > pE + 1e-9) out.push({ exerciseId: e.exerciseId, name: e.exerciseName, kind: 'e1rm', value: myE, prev: pE });
     });
     return out;
   }

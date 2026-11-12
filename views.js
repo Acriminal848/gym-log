@@ -7,13 +7,18 @@
   const GL = window.GL, P = GL.P, SM = GL.SM, I = GL.I, state = GL.state, V = GL.views;
   const esc = GL.esc, fmtNum = GL.fmtNum;
 
-  const KIND_TAG = { add_weight: 'เพิ่มน้ำหนัก', add_reps: 'เพิ่ม reps', hold: 'ลองซ้ำ', deload: 'ลดน้ำหนัก', mixed: 'น้ำหนักเดียวทุกเซต', incomplete: 'ทำให้ครบเซต', incomparable: 'เทียบไม่ได้' };
+  const KIND_TAG = { add_weight: 'เพิ่มน้ำหนัก', add_reps: 'เพิ่ม reps', hold: 'ลองซ้ำ', deload: 'ลดน้ำหนัก', mixed: 'น้ำหนักเดียวทุกเซต', incomplete: 'ทำให้ครบเซต', ramp: 'จากเซตที่ไหวสุด', incomparable: 'เทียบไม่ได้' };
   const KIND_CAUTION = { deload: true, mixed: true, incomplete: true, incomparable: true };
 
   function ico(name, size, cls) { return I.ui(name, size, cls); }
   function exTile(ex, cls) {
     const size = cls === 'lg' ? 54 : cls === 'sm' ? 34 : 42;
     return '<span class="tile ' + (cls || '') + '">' + I.ex(GL.iconKeyFor(ex), size) + '</span>';
+  }
+  // 2.1: ท่าที่มีภาพประกอบ → แตะที่ไอคอนเพื่อดูภาพใหญ่ (ไม่มีป้าย/ข้อความกำกับ); ไม่มีภาพก็เป็นไอคอนปกติ
+  function exTileBtn(ex) {
+    if (!ex || !window.GymArt || !window.GymArt.forExercise(ex)) return exTile(ex, 'lg');
+    return '<button type="button" class="tile lg tile-art" data-action="art-view" data-ex="' + esc(ex.id) + '" aria-label="ดูภาพท่า ' + esc(ex.name) + '">' + I.ex(GL.iconKeyFor(ex), 54) + '</button>';
   }
   function modeLabel(m) { return GL.WEIGHT_MODE_LABEL[m] || m; }
   function modeShort(m) { return GL.WEIGHT_MODE_SHORT[m] || m; }
@@ -167,7 +172,6 @@
     h += '<h1>' + esc(p.name) + '</h1>';
     h += '<p class="sub">' + (p.focus ? esc(p.focus) + ' · ' : '') + rows.length + ' ท่า · ' + total + ' เซต</p>';
     if (p.note) h += '<div class="ex-note">' + ico('info', 18) + '<span>' + esc(p.note) + '</span></div>';
-    h += '<p class="hint">ดูรายละเอียดเฉยๆ ยังไม่เริ่มฝึก — จะเริ่มเมื่อกดปุ่มด้านล่าง</p>';
     rows.forEach(function (x, i) {
       const e = x.ex;
       const subs = e ? (e.subs || []).map(GL.exById).filter(function (s) { return s && !s.archived; }) : [];
@@ -241,14 +245,12 @@
     const ex = GL.exById(entry.exerciseId), t = entry.target;
     const prev = P.findPrevious(state.workouts, entry, w.id);
     let h = '<h3>เป้าหมายวันนี้</h3>';
-    h += '<p class="muted small">นับน้ำหนัก: ' + esc(modeLabel(entry.weightMode)) + ' · ' + esc(entry.equipment || 'ไม่ระบุอุปกรณ์') + '</p>';
     if (t && t.weight != null) h += '<p><b>' + esc(fmtNum(t.weight)) + ' kg × ' + esc(t.reps) + ' ทุกเซต</b></p>';
     h += '<p>' + esc(t && t.reason ? t.reason : (prev ? 'ไม่มีตัวเลขที่เสนอสำหรับท่านี้' : 'ยังไม่เคยเล่นท่านี้ จึงไม่มีตัวเลขเสนอ — กรอกน้ำหนักเริ่มต้นเอง')) + '</p>';
     if (prev && prev.comparable) {
       const pa = P.analyzeSets(prev.entry.sets, ex);
       if (pa.warn) h += coachNote('ครั้งก่อน: ' + pa.text);
     }
-    h += '<p class="hint">ตัวเลขสีเทาในช่องคือค่าที่เสนอ ยังไม่นับเป็นผลจนกว่าจะกดวงกลมยืนยัน แก้น้ำหนัก/reps ได้เองเสมอ</p>';
     h += '<div class="btn-row"><button type="button" class="btn" data-action="close-sheet">ปิด</button></div>';
     return h;
   };
@@ -263,7 +265,7 @@
     const id = esc(entry.id);
     let h = '<section data-entry-card="' + id + '">';
 
-    h += '<div class="ex-head">' + exTile(ex, 'lg') + '<div class="eh-main"><h1>' + esc(entry.exerciseName) + '</h1>' +
+    h += '<div class="ex-head">' + exTileBtn(ex) + '<div class="eh-main"><h1>' + esc(entry.exerciseName) + '</h1>' +
       '<div class="meta">' + esc(entry.equipment || 'ไม่ระบุอุปกรณ์') + (ex && ex.muscle ? ' · ' + esc(ex.muscle) : '') + ' · ' + esc(repRange(ex)) + '</div>' +
       (swapped ? '<div style="margin-top:4px"><span class="tag lav">ท่าทางเลือกวันนี้ · แทน ' + esc(entry.plannedExerciseName || '') + '</span></div>' : '') +
       '</div></div>';
@@ -301,16 +303,18 @@
     if (st.pend > 0) {
       const sNo = st.done + 1;
       const step = ex && ex.step ? fmtNum(ex.step) : '2.5';
+      const hasList = !!(ex && P.cleanWeights(ex.weights).length);
       // 1.9: สองกลุ่ม “− [ขั้น] +” (น้ำหนัก / reps) — ข้อความตรงกลางบรรทัดเดียวเสมอ; ตรงกลางของน้ำหนักแตะเพื่อแก้ขั้นได้
       h += '<div class="adjust" role="group" aria-label="ปรับเซต ' + sNo + '">' +
         '<div class="adj-grp" role="group" aria-label="น้ำหนัก">' +
         '<button type="button" class="adj-b" data-action="bump" data-entry="' + id + '" data-field="weight" data-dir="-1" aria-label="ลดน้ำหนัก ' + esc(step) + ' กิโลกรัม">' + ico('minus', 22) + '</button>' +
-        '<button type="button" class="adj-c edit" data-action="step-edit" data-entry="' + id + '" aria-label="ขั้นน้ำหนัก ' + esc(step) + ' กิโลกรัม แตะเพื่อเปลี่ยน"><span>' + esc(step) + ' kg</span>' + ico('edit', 14) + '</button>' +
+        '<button type="button" class="adj-c edit" data-action="step-edit" data-entry="' + id + '" aria-label="' + (hasList ? 'ปรับตามน้ำหนักของเครื่อง แตะเพื่อแก้รายการ' : 'ขั้นน้ำหนัก ' + esc(step) + ' กิโลกรัม แตะเพื่อเปลี่ยน') + '"><span>' + (hasList ? 'ตามเครื่อง' : esc(step) + ' kg') + '</span>' + ico('edit', 14) + '</button>' +
         '<button type="button" class="adj-b" data-action="bump" data-entry="' + id + '" data-field="weight" data-dir="1" aria-label="เพิ่มน้ำหนัก ' + esc(step) + ' กิโลกรัม">' + ico('plus', 22) + '</button></div>' +
         '<div class="adj-grp" role="group" aria-label="reps">' +
         '<button type="button" class="adj-b" data-action="bump" data-entry="' + id + '" data-field="reps" data-dir="-1" aria-label="ลด 1 rep">' + ico('minus', 22) + '</button>' +
         '<div class="adj-c"><span>1 rep</span></div>' +
         '<button type="button" class="adj-b" data-action="bump" data-entry="' + id + '" data-field="reps" data-dir="1" aria-label="เพิ่ม 1 rep">' + ico('plus', 22) + '</button></div></div>';
+      h += '<p class="pred muted small" id="pred-slot" role="status"></p>';
     }
     h += '<div class="mini-row"><button type="button" class="btn" data-action="more-set" data-entry="' + id + '">' + ico('plus', 18) + 'เพิ่มเซต</button>' +
       '<button type="button" class="btn" data-action="add-warmup" data-entry="' + id + '">' + ico('plus', 18) + 'Warm-up</button>' +
@@ -352,9 +356,21 @@
     }).join('') + '</div>';
     h += '<label class="field-lbl" for="step-in">หรือพิมพ์เอง (kg)</label><input class="field" type="text" inputmode="decimal" id="step-in" data-base="' + esc(base) + '" value="' + esc(fmtNum(cur)) + '" autocomplete="off">';
     h += '<p class="step-prev" id="step-prev">' + stepPreview(base, cur) + '</p>';
-    h += '<div class="stack" style="margin-top:12px"><button type="button" class="btn primary" data-action="step-save" data-entry="' + esc(entryId) + '">บันทึกขั้นนี้</button>' +
-      '<button type="button" class="btn" data-action="close-sheet">ปิด</button></div>';
+    h += '<div class="stack" style="margin-top:12px"><button type="button" class="btn primary" data-action="step-save" data-entry="' + esc(entryId) + '">บันทึกขั้นนี้</button></div>';
+    const nw = P.cleanWeights(ex.weights).length;
+    h += '<button type="button" class="list-btn wl-open" data-action="weights-open" data-entry="' + esc(entryId) + '"><div class="lb-main"><div class="t">น้ำหนักที่เครื่องมี</div><div class="s">' + (nw ? 'ตั้งไว้ ' + nw + ' ค่า' : 'ไม่ได้ตั้ง') + '</div></div>' + ico('chevron', 20) + '</button>';
+    h += '<div class="stack"><button type="button" class="btn" data-action="close-sheet">ปิด</button></div>';
     return h;
+  };
+  V.weightsSheet = function (entryId) {
+    const w = state.active, entry = w && w.entries.filter(function (e) { return e.id === entryId; })[0];
+    const ex = entry && GL.exById(entry.exerciseId);
+    if (!entry || !ex) return '<p class="muted">ไม่พบท่านี้</p><button type="button" class="btn" data-action="close-sheet">ปิด</button>';
+    return '<button type="button" class="back sheet-back" data-action="step-edit" data-entry="' + esc(entryId) + '">' + ico('back', 22) + 'ขั้นน้ำหนัก</button>' +
+      '<h3>น้ำหนักที่เครื่องมี</h3><p class="muted small">' + esc(ex.name) + '</p>' +
+      '<input class="field" type="text" inputmode="decimal" id="wl-in" value="' + esc(GL.weightsText(ex)) + '" placeholder="เช่น 12, 18, 24, 30, 39" autocomplete="off" aria-label="น้ำหนักที่เครื่องมี">' +
+      '<div class="stack" style="margin-top:12px"><button type="button" class="btn primary" data-action="weights-save" data-entry="' + esc(entryId) + '">บันทึก</button>' +
+      '<button type="button" class="btn" data-action="weights-fill" data-entry="' + esc(entryId) + '">ดึงจากที่เคยเล่น</button></div>';
   };
   function stepPreview(base, step) {
     if (!(step > 0)) return '&nbsp;';
@@ -427,7 +443,7 @@
 
   V.exListSheet = function () {
     const w = state.active;
-    let h = '<h3>ท่าใน session นี้</h3><p class="muted small">แตะเพื่อไปที่ท่านั้น — ข้ามลำดับได้</p>';
+    let h = '<h3>ท่าใน session นี้</h3>';
     w.entries.forEach(function (e, i) {
       const st = entryStatus(e), ex = GL.exById(e.exerciseId);
       h += '<button type="button" class="list-btn" data-action="ex-go" data-i="' + i + '">' + exTile(ex, 'sm') +
@@ -449,8 +465,7 @@
       '<button type="button" class="btn" data-action="finish">จบและเก็บผลการฝึก</button>' +
       '<button type="button" class="btn danger" data-action="cancel-session">ยกเลิก session นี้</button>' +
       '<button type="button" class="btn ghost" data-action="close-sheet">ปิด</button></div>';
-    h += '<p class="hint">' + (n ? '“จบและเก็บผลการฝึก” จะเก็บเฉพาะเซตที่ยืนยันแล้ว · “ยกเลิก” จะทิ้งผลของ session นี้เท่านั้น ประวัติที่จบแล้วไม่เปลี่ยน'
-      : 'ยังไม่มีเซตที่บันทึก — การยกเลิกไม่สร้างประวัติ') + '</p>';
+    h += '<p class="hint">' + (n ? 'จบ = เก็บเฉพาะเซตที่ยืนยันแล้ว · ยกเลิก = ทิ้งผลครั้งนี้' : 'ยังไม่มีเซตที่บันทึก') + '</p>';
     return h;
   };
 
@@ -460,13 +475,12 @@
       '<div class="stack"><button type="button" class="btn primary" data-action="conflict-resume">กลับไปเล่นของเดิม</button>' +
       '<button type="button" class="btn" data-action="conflict-keep">เก็บผลเดิมแล้วเริ่มใหม่</button>' +
       '<button type="button" class="btn danger" data-action="conflict-discard">ยกเลิกผลเดิมแล้วเริ่มใหม่</button></div>' +
-      '<p class="hint">“เก็บผลเดิม” บันทึกเฉพาะเซตที่ยืนยันแล้วเข้าประวัติ · การปิดหน้าต่างนี้ไม่เปลี่ยนอะไรเลย</p>';
+      '';
   };
   V.discardConfirmSheet = function (startNext) {
     const w = state.active, n = GL.sessionSetCount(w);
     const ex = w.entries.filter(function (e) { return GL.completedAny(e).length; }).length;
-    return '<h3>ทิ้งผลของ session นี้?</h3><p>“' + esc(w.planName) + '” จดไว้ <b>' + n + ' เซต ใน ' + ex + ' ท่า</b> — จะหายไปและกู้คืนไม่ได้</p>' +
-      '<p class="hint">เฉพาะ session ที่ค้างนี้เท่านั้น ประวัติที่จบแล้วไม่เปลี่ยน</p>' +
+    return '<h3>ทิ้งผลของ session นี้?</h3><p>“' + esc(w.planName) + '” จดไว้ <b>' + n + ' เซต ใน ' + ex + ' ท่า</b> — จะหายไปและกู้คืนไม่ได้</p><p class="hint">ประวัติที่จบแล้วไม่เปลี่ยน</p>' +
       '<div class="stack"><button type="button" class="btn danger solid" data-action="discard-confirm" data-next="' + (startNext ? '1' : '') + '">' + (startNext ? 'ทิ้งผลเดิมแล้วเริ่มใหม่' : 'ทิ้งผลของ session นี้') + '</button>' +
       '<button type="button" class="btn" data-action="close-sheet">กลับไปเล่นต่อ</button></div>';
   };
@@ -497,11 +511,11 @@
       '<div class="stack" style="margin-top:12px"><button type="button" class="btn primary" data-action="es-save">บันทึกการแก้ไข</button>' +
       '<div class="btn-row" style="margin-top:0"><button type="button" class="btn danger" data-action="es-delete">ลบเซตนี้</button>' +
       '<button type="button" class="btn" data-action="close-sheet">ปิด</button></div></div>' +
-      '<p class="hint">เซตหลังจากนี้จะเลื่อนขึ้นถ้าลบ · การแก้ไขมีปุ่ม “ย้อนกลับ” ค้างไว้ให้</p>';
+      '';
   };
 
   V.warmupSheet = function (entryId) {
-    return '<h3>เพิ่ม warm-up</h3><p class="muted small">warm-up ไม่นับเป็น working set และไม่ใช้คำนวณ progression</p>' +
+    return '<h3>เพิ่ม warm-up</h3><p class="muted small">ไม่นับเป็นเซตจริง</p>' +
       '<div class="grid2"><div><div class="field-lbl">น้ำหนัก (kg)</div><input class="field" type="text" inputmode="decimal" id="wu-weight" placeholder="kg"></div>' +
       '<div><div class="field-lbl">reps</div><input class="field" type="text" inputmode="numeric" pattern="[0-9]*" id="wu-reps" placeholder="reps"></div></div>' +
       '<div class="stack" style="margin-top:12px"><button type="button" class="btn primary" data-action="warmup-save" data-entry="' + esc(entryId) + '">บันทึก warm-up</button>' +
@@ -533,12 +547,12 @@
 
   V.addExSheet = function () {
     const list = state.exercises.filter(function (e) { return !e.archived; }).sort(GL.byName);
-    return '<h3>เพิ่มท่าใน session นี้</h3><p class="muted small">วางต่อจากท่าที่กำลังดู และพาไปที่ท่านั้นทันที</p>' +
+    return '<h3>เพิ่มท่าใน session นี้</h3>' +
       '<div class="stepper-row"><span class="sr-lbl">จำนวนเซต</span><div class="mini-stepper">' +
       '<button type="button" data-action="add-sets" data-dir="-1" aria-label="ลดจำนวนเซต">' + ico('minus', 18) + '</button>' +
       '<span id="add-sets-val"><b>' + state.addSets + '</b> เซต</span>' +
       '<button type="button" data-action="add-sets" data-dir="1" aria-label="เพิ่มจำนวนเซต">' + ico('plus', 18) + '</button></div></div>' +
-      '<button type="button" class="btn primary create-cta" data-action="qx-open" data-ctx="session">' + ico('plus', 20) + 'สร้างท่าใหม่ (ไม่มีในรายการ)</button>' +
+      '<div class="cta-pair"><button type="button" class="btn primary create-cta" data-action="qx-open" data-ctx="session">' + ico('plus', 20) + 'สร้างท่าใหม่</button><button type="button" class="btn create-cta" data-action="lib-open" data-ctx="session">' + ico('library', 20) + 'คลังท่า</button></div>' +
       V.pickerList('add-ex-pick', function (e) { return 'data-ex="' + esc(e.id) + '"'; }, list, { createCtx: 'session' }) +
       '<div class="btn-row"><button type="button" class="btn" data-action="close-sheet">ปิด</button></div>';
   };
@@ -565,23 +579,22 @@
         '<button type="button" role="tab" data-action="swap-mode" data-mode="rest" aria-selected="' + (mode === 'rest') + '" class="' + (mode === 'rest' ? 'on' : '') + '">เปลี่ยนเฉพาะเซตที่เหลือ</button>' +
         '<button type="button" role="tab" data-action="swap-mode" data-mode="fix" aria-selected="' + (mode === 'fix') + '" class="' + (mode === 'fix' ? 'on' : '') + '">จดผิดท่า · แก้ที่จดไปแล้ว</button></div>';
       h += mode === 'fix'
-        ? '<p class="hint">ย้ายเซตที่จดไว้แล้ว <b>' + doneN + ' เซต</b> (น้ำหนักและ reps เดิมคงอยู่) ไปเป็นท่าที่เลือก — ใช้เมื่อจดลงผิดท่า</p>'
-        : '<p class="hint">เซตที่จดไว้ ' + doneN + ' เซตของ “' + esc(entry.exerciseName) + '” คงไว้ตามเดิม · เซตที่เหลือ ' + (pend > 0 ? pend : (entry.plannedSets || 3)) + ' เซตจะไปจดกับท่าที่เลือก (ใช้ประวัติของท่านั้น ไม่ย้ายเป้าหมายข้ามท่า)</p>';
+        ? '<p class="hint">ย้ายเซตที่จดแล้ว <b>' + doneN + ' เซต</b> ไปเป็นท่าที่เลือก — ใช้เมื่อจดผิดท่า</p>'
+        : '<p class="hint">เซตที่จดแล้ว ' + doneN + ' เซตคงเดิม · เหลืออีก ' + (pend > 0 ? pend : (entry.plannedSets || 3)) + ' เซตไปจดกับท่าที่เลือก</p>';
     } else {
-      h += '<p><span class="tag lav">เฉพาะวันนี้</span> <span class="muted small">ไม่แก้แผนหลัก</span></p>' +
-        '<p class="hint">ใช้ประวัติของท่าที่เลือกเท่านั้น ไม่ย้ายเป้าหมายน้ำหนักจากท่าเดิม</p>';
+      h += '<p><span class="tag lav">เฉพาะวันนี้</span> <span class="muted small">ไม่แก้แผนหลัก</span></p>';
     }
     function opt(e) {
       const lp = GL.lastPlayed(e.id, e.equipment, e.weightMode);
-      const sub = (e.equipment || '') + ' · นับ ' + modeShort(e.weightMode) + ' · ' +
+      const sub = (e.equipment || '') + ' · ' +
         (lp ? 'เล่นล่าสุด ' + GL.fmtShort(lp.date) + (lp.sameBasis ? '' : ' (คนละอุปกรณ์)') : 'ยังไม่เคยเล่น (ช่องน้ำหนักจะว่าง)');
       return pickRow('swap-pick', 'data-entry="' + esc(entryId) + '" data-ex="' + esc(e.id) + '"' + attrsMode, e, sub);
     }
-    h += '<button type="button" class="btn create-cta" data-action="qx-open" data-ctx="swap" data-entry="' + esc(entryId) + '"' + attrsMode + '>' + ico('plus', 20) + 'สร้างท่าใหม่แล้วใช้ท่านั้นเลย</button>';
+    h += '<div class="cta-pair"><button type="button" class="btn create-cta" data-action="qx-open" data-ctx="swap" data-entry="' + esc(entryId) + '"' + attrsMode + '>' + ico('plus', 20) + 'สร้างท่าใหม่</button><button type="button" class="btn create-cta" data-action="lib-open" data-ctx="swap" data-entry="' + esc(entryId) + '"' + attrsMode + '>' + ico('library', 20) + 'คลังท่า</button></div>';
     if (subIds.length) {
       h += '<div class="field-lbl">ท่าทางเลือกที่ตั้งไว้</div>' + subIds.map(function (id) { return opt(GL.exById(id)); }).join('');
     } else {
-      h += '<div class="notice">ท่านี้ยังไม่ได้ตั้งท่าทางเลือกไว้ — เลือกจากคลังท่าด้านล่างได้เลย (ไม่สุ่มแนะนำข้ามกล้ามเนื้อ/เครื่องให้)</div>';
+      h += '<div class="notice">ยังไม่ได้ตั้งท่าทางเลือก — เลือกจากคลังท่าด้านล่าง</div>';
     }
     const others = state.exercises.filter(function (e) { return !e.archived && !seen[e.id]; }).sort(GL.byName);
     if (others.length) {
@@ -653,11 +666,9 @@
     if (custom) {
       h += '<div class="rest-custom"><input type="text" id="rest-custom" inputmode="numeric" pattern="[0-9]*" value="' + esc(rest) + '" aria-label="เวลาพักกำหนดเอง (วินาที)"><span class="muted">วินาที (10–900)</span></div>';
     }
-    h += '<p class="hint">ตอนพัก กด −15 / +15 ที่แถบจับเวลาได้ · ตั้งเวลาพักเฉพาะบางท่าได้ที่แท็บ ท่า → แก้ไขท่า</p>' +
-      switchRow('restSound', 'เสียงเตือนเมื่อพักครบ', 'เสียงเตือน 3 โน้ต ดังชัดกว่าเดิม · เพลงที่เปิดอยู่อาจหยุดชั่วครู่ตอนเสียงดัง') +
-      switchRow('restKeepAlive', 'เตือนด้วยเสียงแม้ล็อกจอ/สลับแอป (ทดลอง)', 'เล่นเสียงเงียบตลอดช่วงพัก เพื่อให้เสียงเตือนดังตอนครบเวลา · เพลงที่เปิดอยู่จะหยุดระหว่างพัก · iPhone จะแสดงตัวเล่นที่หน้าจอล็อก · ยังไม่ยืนยันบนเครื่องจริง ถ้าไม่ได้ผลให้ปิด') + '</section>';
-    h += '<section class="card"><h3>ประวัติ</h3>' + switchRow('showTargets', 'แสดงเส้นอ้างอิงเซตต่อสัปดาห์', 'ขีดที่ 10 และ 20 เซตต่อกล้ามเนื้อ เป็นแค่เส้นอ้างอิง ไม่ใช่เป้า (ปิดไว้เป็นค่าเริ่มต้น)') + '</section>';
-    h += '<section class="card"><h3>หน้าจอ</h3>' + switchRow('keepAwake', 'เปิดจอค้างระหว่างจดเซต', 'กันจอดับตอนพักระหว่างเซต (ใช้แบตเพิ่มเล็กน้อย)') + '</section>';
+    h += '</section>';
+    h += '<section class="card"><h3>ประวัติ</h3>' + switchRow('showTargets', 'แสดงเส้นอ้างอิงเซตต่อสัปดาห์', 'เส้นขีด 10 / 20 เซต (ไม่ใช่เป้า)') + '</section>';
+    h += '<section class="card"><h3>หน้าจอ</h3>' + switchRow('keepAwake', 'เปิดจอค้างระหว่างจดเซต', 'กันจอดับตอนพัก') + '</section>';
     h += '<section class="card"><h3>ข้อมูลและแอป</h3><button type="button" class="btn" data-action="open-backup">' + ico('backup', 22) + 'สำรอง / กู้คืนข้อมูล</button>' +
       kv('เวอร์ชันแอป', esc(GL.APP_VERSION)) + '</section>';
     return h;
@@ -669,13 +680,12 @@
     const sessions = GL.exerciseSessions(entry.exerciseId, 8);
     const same = sessions.filter(function (r) { return P.sameBasis(r.entry, entry); }).slice(0, 2);
     const other = sessions.filter(function (r) { return !P.sameBasis(r.entry, entry); });
-    let h = '<h3>ประวัติ ' + esc(entry.exerciseName) + '</h3><p class="muted small">' + esc(entry.equipment || '') + ' · นับ ' + esc(modeShort(entry.weightMode)) +
-      ' · ค่าที่คุณกรอกไว้ในตารางยังอยู่ครบ</p>';
-    if (!same.length) h += '<div class="notice">ยังไม่เคยเล่นท่านี้ด้วยอุปกรณ์/วิธีนับนี้</div>';
+    let h = '<h3>ประวัติ ' + esc(entry.exerciseName) + '</h3><p class="muted small">' + esc(entry.equipment || '') + '</p>';
+    if (!same.length) h += '<div class="notice">ยังไม่เคยเล่นท่านี้ด้วยอุปกรณ์นี้</div>';
     same.forEach(function (r) {
       const e = r.entry;
       h += '<div class="card"><div class="b">' + esc(GL.fmtDate(r.workout.date, true)) + ' <span class="muted small">· ' + esc(GL.agoLabel(r.workout.date)) + '</span></div>' +
-        '<div class="small muted">' + esc(e.equipment || '') + ' · นับ ' + esc(modeShort(e.weightMode)) + '</div>';
+        '<div class="small muted">' + esc(e.equipment || '') + '</div>';
       let k = 0;
       e.sets.forEach(function (s) {
         if (s.status === 'skipped') { if (s.kind === 'working') { k++; h += '<div class="setline"><span class="sl-n">' + k + '</span><span class="sl-txt muted">ข้ามเซตนี้</span></div>'; } return; }
@@ -684,11 +694,11 @@
       });
       if (e.target && e.target.weight != null) {
         h += '<details><summary>เป้าหมายที่แอปเคยเสนอวันนั้น</summary><p class="small">' + esc(fmtNum(e.target.weight)) + ' kg × ' + esc(e.target.reps) + ' reps' +
-          (e.target.reason ? ' — ' + esc(e.target.reason) : '') + '</p><p class="hint">เป็นคำแนะนำ ไม่ใช่ผลที่ทำจริง</p></details>';
+          (e.target.reason ? ' — ' + esc(e.target.reason) : '') + '</p></details>';
       }
       h += '</div>';
     });
-    if (other.length) h += '<p class="hint">เคยเล่นท่านี้ด้วยอุปกรณ์/วิธีนับอื่นอีก ' + other.length + ' ครั้ง (ไม่แสดงรวม เพราะน้ำหนักเทียบกันตรง ๆ ไม่ได้ — ดูได้ที่แท็บประวัติ → ท่า)</p>';
+    if (other.length) h += '<p class="hint">เคยเล่นด้วยอุปกรณ์อื่นอีก ' + other.length + ' ครั้ง (ดูที่ประวัติ → ท่า)</p>';
     h += '<div class="btn-row"><button type="button" class="btn" data-action="close-sheet">ปิด</button></div>';
     return h;
   };
@@ -748,7 +758,7 @@
   function weekEditor() {
     const slots = GL.weekSlots(), custom = GL.weekIsCustom();
     let h = '<section class="card" id="wk-editor"><h3>ลำดับในสัปดาห์</h3>' +
-      '<p class="hint">แผนถัดไป = ช่องแรกที่ยังไม่ได้ทำในสัปดาห์นี้ · เริ่มใหม่ทุกวันจันทร์ ไม่ตามทวงช่องที่ข้าม' + (custom ? '' : ' · ตอนนี้ใช้ค่าเริ่มต้น') + '</p>';
+      '<p class="hint">แผนถัดไป = ช่องแรกที่ยังไม่ได้ทำในสัปดาห์นี้ · รีเซ็ตทุกวันจันทร์</p>';
     if (!slots.length) h += '<p class="muted">ยังไม่มีแผน</p>';
     slots.forEach(function (p, i) {
       h += '<div class="slot-row"><span class="slot-n">' + (i + 1) + '</span><span class="slot-t">' + esc(p.name) + '</span><div class="slot-btns">' +
@@ -762,7 +772,7 @@
   }
 
   V.weekAddSheet = function () {
-    let h = '<h3>เพิ่มช่อง</h3><p class="muted small">เลือกแผนที่จะใส่เป็นช่องถัดไปในสัปดาห์ (ซ้ำแผนเดิมได้)</p>';
+    let h = '<h3>เพิ่มช่อง</h3>';
     GL.sortedPlans().forEach(function (p) {
       h += '<button type="button" class="list-btn" data-action="wk-add-pick" data-plan="' + esc(p.id) + '"><div class="lb-main"><div class="t">' + esc(p.name) + '</div></div>' + ico('plus', 22) + '</button>';
     });
@@ -814,7 +824,7 @@
     h += '</div><button type="button" class="btn" style="margin-top:10px" data-action="pi-add">' + ico('plus', 20) + 'เพิ่มท่า</button></div>';
     if (editing) {
       h += '<h2>จัดการ</h2><button type="button" class="btn danger" data-action="plan-delete-ask" data-id="' + esc(d.id) + '">ลบแผนนี้</button>' +
-        '<p class="hint">ลบแผนไม่กระทบประวัติที่เคยจดไว้ (ประวัติเก็บชื่อแผนตอนนั้นไว้เอง) · การแก้แผนมีผลกับ workout ใหม่เท่านั้น</p>';
+        '';
     }
     return h;
   };
@@ -822,7 +832,7 @@
   V.planAddExSheet = function () {
     const list = state.exercises.filter(function (e) { return !e.archived; }).sort(GL.byName);
     return '<h3>เลือกท่าเพิ่มในแผน</h3>' +
-      '<button type="button" class="btn primary create-cta" data-action="qx-open" data-ctx="plan">' + ico('plus', 20) + 'สร้างท่าใหม่ (ไม่มีในรายการ)</button>' +
+      '<div class="cta-pair"><button type="button" class="btn primary create-cta" data-action="qx-open" data-ctx="plan">' + ico('plus', 20) + 'สร้างท่าใหม่</button><button type="button" class="btn create-cta" data-action="lib-open" data-ctx="plan">' + ico('library', 20) + 'คลังท่า</button></div>' +
       V.pickerList('pi-add-pick', function (e) { return 'data-ex="' + esc(e.id) + '"'; }, list, { createCtx: 'plan' }) +
       '<div class="btn-row"><button type="button" class="btn" data-action="close-sheet">ปิด</button></div>';
   };
@@ -850,7 +860,7 @@
     if (!q && !state.exMuscle) {
       const archived = state.exercises.filter(function (e) { return e.archived; }).sort(GL.byName);
       if (archived.length) {
-        h += '<h2>เก็บเข้าคลัง · ' + archived.length + '</h2><p class="hint">ไม่โผล่ในตัวเลือกใหม่ แต่ประวัติยังอยู่ครบ</p>';
+        h += '<h2>เก็บเข้าคลัง · ' + archived.length + '</h2>';
         archived.forEach(function (e) {
           h += '<div class="card" style="display:flex;gap:12px;align-items:center">' + exTile(e, 'sm') + '<div style="flex:1;min-width:0"><div class="b">' + esc(e.name) + '</div><div class="small muted">' + esc(e.muscle || '') + ' · ' + esc(e.equipment || '') + '</div></div>' +
             '<button type="button" class="btn small" data-action="ex-unarchive" data-id="' + esc(e.id) + '">นำกลับมาใช้</button></div>';
@@ -859,11 +869,99 @@
     }
     return h;
   };
+
+  /* ---------- 2.0: คลังท่า (ภาพจาก free-exercise-db แหล่งเดียว) ---------- */
+  const LIBR = window.GymLibrary;
+  const LIB_ADD = { tab: 'เพิ่มเข้าท่าของฉัน', session: 'เพิ่มและใช้ใน session นี้', swap: 'เพิ่มและเปลี่ยนเป็นท่านี้', plan: 'เพิ่มและใส่ในแผน' };
+  const LIB_USE = { tab: 'ดูท่านี้ในรายการ', session: 'ใช้ท่านี้ใน session', swap: 'เปลี่ยนเป็นท่านี้', plan: 'ใส่ท่านี้ในแผน' };
+  function libOwned(entry) { return state.exercises.filter(function (e) { return e.id === entry.id; })[0] || null; }
+  V.libSheet = function () {
+    const c = state.lib || { ctx: 'tab' };
+    const all = LIBR.entries();
+    const list = all.filter(function (e) { const o = libOwned(e); return !o || o.archived; });
+    const pseudo = list.map(function (e) { return { id: e.id, slug: e.slug, name: e.name, muscle: e.muscle, equipment: e.equipment, repMin: e.repMin, repMax: e.repMax, icon: (e.artId || window.GymArt.forId(e.id)) ? window.GymArt.key(e.artId || window.GymArt.forId(e.id)) : GL.guessIcon(e.name) }; });
+    let h = '<h3>คลังท่า</h3><p class="muted small">' + list.length + ' ท่าที่ยังไม่ได้เพิ่ม' +
+      (c.ctx === 'session' ? ' · เพิ่มแล้วใส่ใน session นี้ทันที' : c.ctx === 'swap' ? ' · เพิ่มแล้วเปลี่ยนเป็นท่านี้ทันที' : c.ctx === 'plan' ? ' · เพิ่มแล้วใส่ในแผน' : '') + '</p>';
+    h += V.pickerList('lib-pick', function (e) { return 'data-slug="' + esc(e.slug) + '"'; }, pseudo, { subText: function (e) { return (e.muscle || '') + ' · ' + (e.equipment || '') + ' · ' + e.repMin + '–' + e.repMax + ' reps'; } });
+    h += '<div class="btn-row"><button type="button" class="btn" data-action="close-sheet">ปิด</button></div>';
+    return h;
+  };
+  V.libDetail = function (slug) {
+    const en = LIBR.bySlug(slug);
+    if (!en) return V.libSheet();
+    const c = state.lib || { ctx: 'tab' }, ctx = LIB_ADD[c.ctx] ? c.ctx : 'tab';
+    const owned = libOwned(en);
+    const lower = en.name.trim().toLowerCase();
+    const sims = LIBR.similar(en, state.exercises);
+    const exact = sims.filter(function (e) { return String(e.name).trim().toLowerCase() === lower; });
+    let h = '<button type="button" class="back sheet-back" data-action="lib-list">' + ico('back', 22) + 'คลังท่า</button>';
+    h += '<h3>' + esc(en.name) + '</h3><div class="small muted">' + esc(en.muscle) + ' · ' + esc(en.equipment) + ' · ช่วง reps ' + en.repMin + '–' + en.repMax + ' · ขั้นน้ำหนัก ' + fmtNum(en.step) + ' kg (แก้ได้ภายหลัง)</div>';
+    const enArt = en.artId || window.GymArt.forId(en.id);
+    if (enArt) h += '<div class="art-big">' + I.ex(window.GymArt.key(enArt), 200) + '</div>';
+    h += '<div class="stack">';
+    if (sims.length) {
+      h += '<div class="coach-note">' + ico('info', 18) + '<span>คุณมีท่าที่ชื่อคล้ายกันอยู่แล้ว — ใช้ท่าเดิมเพื่อให้ประวัติและเป้าหมายรวมกันที่เดียว</span></div>';
+      sims.slice(0, 3).forEach(function (e) {
+        h += '<button type="button" class="btn primary" data-action="lib-use" data-id="' + esc(e.id) + '">' + esc(LIB_USE[ctx]) + ' · ' + esc(e.name) + '</button>';
+      });
+    }
+    if (owned && !owned.archived) {
+      h += '<button type="button" class="btn' + (sims.length ? '' : ' primary') + '" data-action="lib-use" data-id="' + esc(owned.id) + '">' + esc(LIB_USE[ctx]) + '</button>';
+    } else if (exact.length) {
+      h += '<p class="hint">มีท่าชื่อเดียวกันนี้อยู่แล้ว จึงไม่เพิ่มซ้ำ (กันชื่อซ้ำสับสน)</p>';
+    } else {
+      h += '<button type="button" class="btn' + (sims.length ? '' : ' primary') + '" data-action="lib-add" data-slug="' + esc(en.slug) + '">' + esc(owned ? 'นำกลับมาใช้ · ' + LIB_ADD[ctx] : (sims.length ? 'เพิ่มเป็นท่าใหม่จากคลัง' : LIB_ADD[ctx])) + '</button>';
+    }
+    h += '<button type="button" class="btn" data-action="close-sheet">ปิด</button></div>';
+    return h;
+  };
+  // 2.1: คำอธิบายที่ซ่อนไว้หลังปุ่ม ⓘ (ไม่แสดงเป็นย่อหน้าในหน้าหลัก)
+  V.helpSheet = function (k) {
+    let t = '', lines = [];
+    if (k === 'sets') {
+      t = 'วิธีนับเซต';
+      lines = ['นับเซต working ที่ทำเสร็จ ตามกล้ามเนื้อหลักของท่านั้น', 'ไม่นับ warm-up เซตที่ข้าม และผลทางอ้อม (เช่น อกช่วยไตรเซ็ป)',
+        GL.setting('showTargets') === true ? 'เส้นขีดที่ 10 และ 20 เซตเป็นเส้นอ้างอิงทั่วไป ไม่ใช่เป้าที่ต้องทำให้ถึง' : 'เปิดเส้นอ้างอิงได้ที่ตั้งค่า'];
+    } else if (k === 'trend') {
+      t = 'อ่านกราฟและตัวเลข';
+      lines = ['<b>ทำงาน</b> = น้ำหนักของเซตที่อ่อนสุดในแต่ละครั้ง (น้ำหนักที่ทำได้ทุกเซต)', '<b>สูงสุด</b> = เซตที่หนักสุดของครั้งนั้น',
+        '<b>1RM</b> = ประมาณจากสูตร Epley น้ำหนัก × (1 + reps/30) ใช้เฉพาะเซตที่ทำ 1–12 reps จึงเป็นดัชนีดูแนวโน้ม ไม่ใช่ค่าที่ยกได้จริง',
+        '<b>◆ PR</b> = สถิติใหม่ของท่า+อุปกรณ์นั้น (ครั้งแรกไม่นับ)', '<b>kg×reps</b> = น้ำหนัก × reps รวมเฉพาะเซต working ใช้ดูแนวโน้มของท่านั้น ไม่ใช่คะแนนว่ากล้ามโต',
+        'อุปกรณ์หรือวิธีนับน้ำหนักต่างกันจะแยกเป็นคนละกลุ่ม เพราะเทียบกันตรง ๆ ไม่ได้'];
+    }
+    return '<h3>' + esc(t) + '</h3><ul class="help-list">' + lines.map(function (x) { return '<li>' + x + '</li>'; }).join('') + '</ul>' +
+      '<div class="btn-row"><button type="button" class="btn" data-action="close-sheet">ปิด</button></div>';
+  };
+  // 2.1: ภาพใหญ่ของท่า (แตะที่ไอคอนหัวท่า) — ภาพบอกกล้ามเนื้อด้วยสีส้มอยู่แล้ว จึงมีแค่ชื่อกับบรรทัดเดียว
+  V.artSheet = function (exId) {
+    const ex = GL.exById(exId), id = ex && window.GymArt.forExercise(ex);
+    if (!ex || !id) return '<h3>ไม่มีภาพของท่านี้</h3><button type="button" class="btn" data-action="close-sheet">ปิด</button>';
+    return '<h3>' + esc(ex.name) + '</h3><div class="art-big">' + I.ex(window.GymArt.key(id), 240) + '</div>' +
+      '<p class="small muted art-leg">ส่วนที่ทำงาน = สีส้ม</p>' +
+      '<div class="btn-row"><button type="button" class="btn" data-action="close-sheet">ปิด</button></div>';
+  };
+  // 2.1: เลือกภาพให้ท่า (ท่าที่คุณสร้างเอง) — จัดกลุ่มตามกล้ามเนื้อ
+  V.artPicker = function () {
+    const st = state.sub, cur = st && st.draft ? st.draft.icon : '';
+    const groups = {}, order = [];
+    window.GymArt.ROWS.forEach(function (r) { const m = GL.exMajor({ muscle: r[2] }); if (!groups[m]) { groups[m] = []; order.push(m); } groups[m].push(r); });
+    const mo = GL.muscleOptions(); order.sort(function (a, b) { return (mo.indexOf(a) < 0 ? 99 : mo.indexOf(a)) - (mo.indexOf(b) < 0 ? 99 : mo.indexOf(b)); });
+    let h = '<h3>เลือกภาพท่า</h3>';
+    order.forEach(function (m) {
+      h += '<div class="fl">' + esc(m) + '</div><div class="art-grid">' + groups[m].map(function (r) {
+        const k = window.GymArt.key(r[0]), on = cur === k;
+        return '<button type="button" class="art-opt' + (on ? ' on' : '') + '" data-action="art-pick" data-v="' + esc(k) + '" aria-pressed="' + on + '">' + I.ex(k, 64) + '<span>' + esc(r[1]) + '</span></button>';
+      }).join('') + '</div>';
+    });
+    h += '<div class="btn-row"><button type="button" class="btn" data-action="close-sheet">ปิด</button></div>';
+    return h;
+  };
+
   V.exercises = function () {
     const muscles = [];
     state.exercises.forEach(function (e) { if (!e.archived) { const m = GL.exMajor(e); if (muscles.indexOf(m) < 0) muscles.push(m); } });
     muscles.sort(function (a, b) { const o = GL.muscleOptions(); const ia = o.indexOf(a), ib = o.indexOf(b); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib); });
-    let h = '<div class="page-title"><h1>ท่า</h1><button type="button" class="btn small primary" data-action="ex-new">' + ico('plus', 20) + 'เพิ่มท่า</button></div>';
+    let h = '<div class="page-title"><h1>ท่า</h1><div class="pt-actions"><button type="button" class="btn small" data-action="lib-open" data-ctx="tab">' + ico('library', 20) + 'คลังท่า</button><button type="button" class="btn small primary" data-action="ex-new">' + ico('plus', 20) + 'เพิ่มท่า</button></div></div>';
     h += '<div class="search">' + ico('search', 22) + '<input class="field" type="search" id="ex-q" data-filter="exlist" value="' + esc(state.exQuery) + '" placeholder="ค้นหาชื่อท่า / เครื่อง" autocomplete="off" aria-label="ค้นหาท่า"></div>';
     h += '<div class="chips scroll"><button type="button" class="chip' + (!state.exMuscle ? ' on' : '') + '" data-action="ex-muscle" data-v="">ทั้งหมด</button>' +
       muscles.map(function (m) { return '<button type="button" class="chip' + (state.exMuscle === m ? ' on' : '') + '" data-action="ex-muscle" data-v="' + esc(m) + '">' + esc(m) + '</button>'; }).join('') + '</div>';
@@ -891,7 +989,8 @@
     const st = state.sub, d = st.draft, editing = !!d.id;
     // 1.8: ฟอร์มสองระดับ — พื้นฐาน (ชื่อ/กล้ามเนื้อ/อุปกรณ์) กับ “ตั้งค่าเพิ่มเติม” ที่พับไว้ · ปุ่มบันทึกติดขอบล่าง
     let h = '<div class="topbar"><button type="button" class="back" data-action="ex-back">' + ico('back', 24) + 'ท่า</button></div>';
-    h += '<h1>' + (editing ? 'แก้ไขท่า' : 'เพิ่มท่าใหม่') + '</h1><div class="form form-pin">';
+    h += '<h1>' + (editing ? 'แก้ไขท่า' : 'เพิ่มท่าใหม่') + '</h1>';
+    h += '<div class="form form-pin">';
     h += '<label class="fl" for="ef-name">ชื่อท่า</label><input type="text" id="ef-name" data-ef="name" maxlength="120" value="' + esc(d.name) + '" placeholder="เช่น Leg Press" autocomplete="off" enterkeyhint="done">';
     h += '<div class="fl">กล้ามเนื้อหลัก</div>' + muscleChips(d.muscle.trim());
     h += '<label class="fl" for="ef-equipment">อุปกรณ์</label><div class="chips wrap">' + GL.QX_EQUIP.map(function (e, i) {
@@ -906,14 +1005,17 @@
     h += '<label class="fl" for="ef-mode">วิธีนับน้ำหนัก</label><select id="ef-mode" data-ef="weightMode">' + GL.WEIGHT_MODE_ORDER.map(function (m) {
       return '<option value="' + m + '"' + (d.weightMode === m ? ' selected' : '') + '>' + esc(GL.WEIGHT_MODE_LABEL[m]) + '</option>';
     }).join('') + '</select>' +
-      '<p class="hint">ใช้ชื่ออุปกรณ์แยกกันเมื่อสเกลน้ำหนักเทียบกันไม่ได้ (ประวัติและเป้าหมายแยกตามอุปกรณ์)</p>';
+      '';
     h += '<div class="grid2"><div><label class="fl" for="ef-rmin">reps ต่ำสุด</label><input type="text" id="ef-rmin" inputmode="numeric" pattern="[0-9]*" data-ef="repMin" value="' + esc(d.repMin) + '"></div>' +
       '<div><label class="fl" for="ef-rmax">reps สูงสุด</label><input type="text" id="ef-rmax" inputmode="numeric" pattern="[0-9]*" data-ef="repMax" value="' + esc(d.repMax) + '"></div></div>';
     h += '<label class="fl" for="ef-step">น้ำหนักที่เพิ่มได้ต่อขั้น (kg)</label><input type="text" id="ef-step" inputmode="decimal" data-ef="step" value="' + esc(d.step) + '">';
+    h += '<label class="fl" for="ef-wl">น้ำหนักที่เครื่องมี (ไม่บังคับ)</label><input type="text" id="ef-wl" inputmode="decimal" data-ef="weights" value="' + esc(d.weights || '') + '" placeholder="เช่น 12, 18, 24, 30, 39" autocomplete="off">';
     h += '<label class="fl" for="ef-rest">เวลาพักหลังแต่ละเซต (วินาที)</label><input type="text" id="ef-rest" inputmode="numeric" pattern="[0-9]*" data-ef="restSec" value="' + esc(d.restSec || '') + '" placeholder="เว้นว่าง = ใช้ค่ากลาง ' + GL.setting('restSeconds') + ' วินาที">';
     h += '<label class="fl" for="ef-note">หมายเหตุ (แสดงบนหน้าจด)</label><input type="text" id="ef-note" data-ef="note" maxlength="300" value="' + esc(d.note || '') + '" autocomplete="off">';
 
-    h += '<label class="fl">ภาพการเคลื่อนไหว</label><div class="icon-grid">' + I.EX_KEYS.map(function (k) {
+    const artCur = window.GymArt.forExercise({ id: d.id, icon: d.icon });
+    h += '<label class="fl">ภาพประกอบท่า</label><button type="button" class="art-btn" data-action="art-open">' + (artCur ? I.ex(window.GymArt.key(artCur), 44) : '') + '<span>' + (artCur ? 'เปลี่ยนภาพ' : 'เลือกภาพท่า') + '</span>' + ico('down', 20, 'chev') + '</button>';
+    h += '<label class="fl">หรือภาพคนเส้น</label><div class="icon-grid">' + I.EX_KEYS.map(function (k) {
       return '<button type="button" data-action="icon-pick" data-v="' + k + '" class="' + (d.icon === k ? 'on' : '') + '" aria-label="ภาพ ' + esc(I.EX_LABEL[k]) + '"' + (d.icon === k ? ' aria-pressed="true"' : ' aria-pressed="false"') + '>' + I.ex(k, 40) + '<span>' + esc(I.EX_LABEL[k]) + '</span></button>';
     }).join('') + '</div>';
 
@@ -926,9 +1028,8 @@
         '<span class="cr-main">' + esc(e.name) + '<span class="cr-sub">' + esc(e.muscle || '') + ' · ' + esc(e.equipment || '') + '</span></span></label>';
     });
     if (others.length) h += '</div>';
-    h += '<p class="hint">ตอนใช้ท่าทางเลือก แอปใช้ประวัติของท่าที่เลือกจริงเท่านั้น ไม่ย้ายน้ำหนักข้ามท่า</p>';
     if (editing && d.hadHistory) {
-      h += '<div class="notice">ท่านี้มีประวัติแล้ว ถ้าเปลี่ยนอุปกรณ์หรือวิธีนับน้ำหนัก ประวัติเดิมจะแสดงเป็น “เทียบกันไม่ได้” (ไม่ถูกลบ) การเปลี่ยนชื่อไม่กระทบประวัติ</div>';
+      h += '<div class="notice">ท่านี้มีประวัติแล้ว — ถ้าเปลี่ยนอุปกรณ์/วิธีนับ ประวัติเดิมจะแสดงเป็น “เทียบกันไม่ได้”</div>';
     }
     h += '</div>';   // #ex-adv
     h += '<div class="sticky-cta form-cta"><button type="button" class="btn primary" data-action="ex-save">' + (editing ? 'บันทึกการแก้ไข' : 'บันทึกท่า') + '</button></div>';
@@ -938,7 +1039,7 @@
       h += '<h2>จัดการ</h2>';
       if (used.length) h += '<p class="muted small">ท่านี้อยู่ในแผน: ' + esc(used.map(function (p) { return p.name; }).join(', ')) + '</p>';
       if (d.hadHistory) {
-        h += '<p class="muted small">ท่านี้มีประวัติ จึงลบไม่ได้ แต่เก็บเข้าคลังได้ (ประวัติยังอยู่ครบ)</p>' +
+        h += '<p class="muted small">ท่านี้มีประวัติ — ลบไม่ได้ แต่เก็บเข้าคลังได้</p>' +
           '<button type="button" class="btn danger" data-action="ex-archive" data-id="' + esc(d.id) + '">เก็บท่านี้เข้าคลัง</button>';
       } else {
         h += '<button type="button" class="btn danger" data-action="ex-delete-ask" data-id="' + esc(d.id) + '">ลบท่านี้</button>';
@@ -975,8 +1076,7 @@
     if (state.hisMode === 'overview') return h + V.overview();
     if (state.hisMode === 'exercises') {
       const idx = SM.exerciseIndex(state.workouts).sort(function (a, b) { return a.lastDate < b.lastDate ? 1 : -1; });
-      if (!idx.length) return h + historyEmpty('ยังไม่มีประวัติ — จบ workout แรกแล้วท่าที่เล่นจะมาอยู่ที่นี่ พร้อมกราฟแนวโน้มน้ำหนัก');
-      h += '<p class="hint">แตะท่าเพื่อดูแนวโน้มน้ำหนักและสถิติใหม่ (PR)</p>';
+      if (!idx.length) return h + historyEmpty('ยังไม่มีประวัติ — จบ workout แรกแล้วท่าจะมาอยู่ที่นี่');
       idx.forEach(function (x) {
         h += '<button type="button" class="list-btn" data-action="sum-open" data-ex="' + esc(x.exerciseId) + '">' + exTile(GL.exById(x.exerciseId), 'sm') +
           '<div class="lb-main"><div class="t">' + esc(x.name) + '</div><div class="s">เล่นแล้ว ' + x.sessions + ' ครั้ง · ล่าสุด ' + esc(GL.fmtDate(x.lastDate, true)) + '</div></div>' + ico('chevron', 20, 'chev') + '</button>';
@@ -1017,32 +1117,31 @@
     let h = '<section class="card ov-card"><div class="ov-nav"><button type="button" class="iconbtn" data-action="his-week" data-d="-1" aria-label="สัปดาห์ก่อนหน้า">' + ico('back', 22) + '</button>' +
       '<div class="ov-title"><b>' + esc(fmtRange(ws, we)) + '</b><span class="muted small">' + (off === 0 ? 'สัปดาห์นี้' : Math.abs(off) + ' สัปดาห์ก่อน') + ' · ' + wkSessions + ' ครั้ง</span></div>' +
       '<button type="button" class="iconbtn" data-action="his-week" data-d="1" aria-label="สัปดาห์ถัดไป"' + (off === 0 ? ' disabled' : '') + '>' + ico('chevron', 22) + '</button></div>';
-    h += '<h3>เซตต่อกล้ามเนื้อ</h3>';
+    h += '<div class="h-row"><h3>เซตต่อกล้ามเนื้อ</h3><button type="button" class="iconbtn bare" data-action="help" data-k="sets" aria-label="วิธีนับเซต">' + ico('info', 22) + '</button></div>';
     if (!groups.length) h += '<p class="muted">ไม่มีกล้ามเนื้อให้แสดง</p>';
     groups.forEach(function (g) {
       const pct = Math.min(100, Math.round(g.sets / maxSets * 100));
-      h += '<div class="mb-row"><div class="mb-head"><span class="mb-name">' + esc(g.major) + '</span><span class="mb-num"><b>' + g.sets + '</b> เซต' + (g.sessions ? ' · ' + g.sessions + ' ครั้ง' : '') + '</span></div>' +
+      h += '<div class="mb-row' + (g.sets ? '' : ' zero') + '"><div class="mb-head"><span class="mb-name">' + esc(g.major) + '</span><span class="mb-num"><b>' + g.sets + '</b> เซต' + (g.sessions ? ' · ' + g.sessions + ' ครั้ง' : '') + '</span></div>' +
         '<div class="mb-track" role="img" aria-label="' + esc(g.major + ' ' + g.sets + ' เซต ' + g.sessions + ' ครั้ง') + '"><i style="width:' + pct + '%"></i>' +
         (targets ? '<s class="mb-mark" style="left:' + Math.round(10 / maxSets * 100) + '%"></s><s class="mb-mark" style="left:' + Math.round(20 / maxSets * 100) + '%"></s>' : '') + '</div>';
-      if (g.subs.length) {
+      // ส่วนย่อย: โชว์เฉพาะที่มีเซต · ที่ยังไม่ได้เล่นรวมเป็นบรรทัดเดียว · หมวดที่ 0 เซตไม่แตกส่วนย่อยเลย
+      if (g.sets && g.subs.length) {
+        const played = g.subs.filter(function (x) { return x.sets; }), idle = g.subs.filter(function (x) { return !x.sets; });
         h += '<ul class="mb-subs" aria-label="ส่วนย่อยของ' + esc(g.major) + '">';
-        g.subs.forEach(function (s) {
-          const sp = Math.min(100, Math.round(s.sets / maxSets * 100));
-          h += '<li class="' + (s.sets ? '' : 'none') + '"><span class="ms-name">' + esc(s.key) + '</span>' +
-            '<span class="ms-bar" aria-hidden="true"><i style="width:' + sp + '%"></i></span>' +
-            '<span class="ms-num">' + (s.sets ? '<b>' + s.sets + '</b> เซต' : 'ยังไม่ได้เล่น') + '</span></li>';
+        played.forEach(function (x) {
+          h += '<li><span class="ms-name">' + esc(x.key) + '</span><span class="ms-bar" aria-hidden="true"><i style="width:' + Math.min(100, Math.round(x.sets / maxSets * 100)) + '%"></i></span><span class="ms-num"><b>' + x.sets + '</b> เซต</span></li>';
         });
         if (g.generic) h += '<li><span class="ms-name">ไม่ระบุส่วน</span><span class="ms-bar" aria-hidden="true"><i style="width:' + Math.min(100, Math.round(g.generic / maxSets * 100)) + '%"></i></span><span class="ms-num"><b>' + g.generic + '</b> เซต</span></li>';
         h += '</ul>';
+        if (idle.length) h += '<p class="mb-idle">ยังไม่ได้เล่น: ' + idle.map(function (x) { return esc(x.key); }).join(' · ') + '</p>';
       }
       h += '</div>';
     });
-    h += '<p class="hint">นับ <b>เซตตรง</b> = เซต working ที่ทำเสร็จ ตามกล้ามเนื้อหลักของท่านั้น (ไม่นับผลทางอ้อม เช่น อกช่วยไตรเซ็ป · warm-up และเซตที่ข้ามไม่นับ) ' +
-      (targets ? 'เส้นขีดที่ 10 และ 20 เซตเป็นเพียงเส้นอ้างอิงทั่วไป ไม่ใช่เป้าที่ต้องทำให้ถึง' : 'เปิดเส้นอ้างอิงได้ที่ตั้งค่า (ปิดไว้เป็นค่าเริ่มต้น)') + '</p></section>';
+    h += '</section>';
 
     const g = SM.consistencyGrid(state.workouts, GL.localDateKey(), 12);
     const dayN = ['จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส', 'อา'];
-    h += '<section class="card cg-card"><h3>ความสม่ำเสมอ 12 สัปดาห์</h3><p class="muted small">รวม <b style="color:var(--text)">' + g.total + '</b> ครั้ง · เฉลี่ย ' + g.avg + ' ครั้ง/สัปดาห์ · มีการฝึก ' + g.activeWeeks + ' จาก 12 สัปดาห์</p>' +
+    h += '<section class="card cg-card"><h3>ความสม่ำเสมอ 12 สัปดาห์</h3><p class="muted small"><b style="color:var(--text)">' + g.total + '</b> ครั้ง · ฝึก ' + g.activeWeeks + ' จาก 12 สัปดาห์</p>' +
       '<table class="cg"><caption class="sr-only">จำนวน session ที่จดต่อวัน เรียงจากสัปดาห์เก่าไปใหม่ (ซ้ายไปขวา) แถวคือวันจันทร์ถึงอาทิตย์</caption><thead class="sr-only"><tr><th></th>' +
       g.weeks.map(function (w) { return '<th scope="col">สัปดาห์ ' + esc(GL.fmtShort(w.weekStart)) + '</th>'; }).join('') + '</tr></thead><tbody>';
     for (let d = 0; d < 7; d++) {
@@ -1067,7 +1166,7 @@
       const swapped = entry.plannedExerciseId && entry.plannedExerciseId !== entry.exerciseId;
       const vol = P.volumeLoad(entry), ex = GL.exById(entry.exerciseId);
       h += '<section class="card"><div style="display:flex;gap:12px;align-items:center">' + exTile(ex, 'sm') + '<div style="flex:1;min-width:0"><h3>' + esc(entry.exerciseName) + '</h3>' +
-        '<div class="small muted">' + esc(entry.equipment || '') + ' · นับ ' + esc(modeShort(entry.weightMode)) + '</div></div></div>' +
+        '<div class="small muted">' + esc(entry.equipment || '') + '</div></div></div>' +
         (swapped ? '<div style="margin-top:6px"><span class="tag lav">ท่าทางเลือก · แทน ' + esc(entry.plannedExerciseName || '') + '</span></div>' : '');
       let wi = 0;
       h += '<div style="margin-top:6px">';
@@ -1077,14 +1176,14 @@
         h += '<div class="setline"><span class="sl-n">' + label + '</span><span class="sl-txt' + (s.status === 'skipped' ? ' muted' : '') + '">' + esc(txt) + '</span>' +
           '<button type="button" class="btn small" data-action="edit-set" data-workout="' + esc(w.id) + '" data-entry="' + esc(entry.id) + '" data-set="' + esc(s.id) + '">แก้</button></div>';
       });
-      h += '</div><p class="muted small">working sets ที่ทำจริง: <b style="color:var(--text)">' + P.workingCompleted(entry).length +
-        '</b> · volume load: <b style="color:var(--text)">' + esc(fmtNum(vol)) + '</b> kg×reps (' + esc(modeShort(entry.weightMode)) + ')</p></section>';
+      h += '</div><p class="muted small"><b style="color:var(--text)">' + P.workingCompleted(entry).length + '</b> เซต · <b style="color:var(--text)">' + esc(fmtNum(vol)) + '</b> kg×reps</p></section>';
     });
     h += '<button type="button" class="btn danger" data-action="delete-workout" data-id="' + esc(w.id) + '">ลบ workout นี้ออกจากประวัติ</button>';
     return h;
   };
 
   V.sumEx = function (exId) {
+    const exRec = GL.exById(exId);
     const groups = SM.exerciseHistory(state.workouts, exId);
     const idx = SM.exerciseIndex(state.workouts).filter(function (x) { return x.exerciseId === exId; })[0];
     let h = '<div class="topbar"><button type="button" class="back" data-action="sum-back">' + ico('back', 24) + 'ประวัติ</button></div>';
@@ -1092,20 +1191,19 @@
     if (!groups.length) return h + '<p class="muted">ไม่มีประวัติที่จบแล้วของท่านี้</p>';
     h += '<div class="seg"><button type="button" class="' + (state.sumView === 'session' ? 'on' : '') + '" data-action="sum-view" data-v="session">รายครั้ง</button>' +
       '<button type="button" class="' + (state.sumView === 'week' ? 'on' : '') + '" data-action="sum-view" data-v="week">รายสัปดาห์</button></div>';
-    if (groups.length > 1) h += '<div class="notice">ท่านี้เคยเล่นด้วยอุปกรณ์/วิธีนับน้ำหนักต่างกัน จึงแยกเป็นกลุ่ม ไม่รวมกัน (น้ำหนักเทียบกันตรง ๆ ไม่ได้)</div>';
     const metric = state.trendMetric === 'e1rm' ? 'e1rm' : state.trendMetric === 'top' ? 'top' : 'work';
     groups.forEach(function (g) {
-      const pts = SM.exerciseTrend(g.sessions, metric);
+      const pts = SM.exerciseTrend(g.sessions, metric, exRec && exRec.repMin);
       const prByWorkout = {};
       pts.forEach(function (p) { if (p.pr) prByWorkout[p.workoutId] = true; });
       const latest = g.sessions[0];
       let best = g.sessions[0].top;
       g.sessions.forEach(function (r) { if (r.top.weight > best.weight || (r.top.weight === best.weight && r.top.reps > best.reps)) best = r.top; });
       const oldest = g.sessions[g.sessions.length - 1];
-      h += '<section class="card"><h3>' + esc(g.equipment || 'ไม่ระบุอุปกรณ์') + '</h3><div class="small muted">นับน้ำหนัก: ' + esc(modeLabel(g.weightMode)) + '</div>';
+      h += '<section class="card"><h3>' + esc(g.equipment || 'ไม่ระบุอุปกรณ์') + '</h3>' + (groups.length > 1 ? '<div class="small muted">' + esc(modeShort(g.weightMode)) + '</div>' : '');
       h += '<div class="stat-row"><div class="stat"><span>ล่าสุด</span><b>' + esc(fmtNum(latest.top.weight)) + '×' + latest.top.reps + '</b><small>เซตหนักสุด</small></div>' +
-        '<div class="stat"><span>ดีที่สุด</span><b>' + esc(fmtNum(best.weight)) + '×' + best.reps + '</b><small>เซตหนักสุดที่เคยทำ</small></div>' +
-        '<div class="stat"><span>เล่นแล้ว</span><b>' + g.sessions.length + '</b><small>ครั้ง' + (g.sessions.length > 1 ? ' · ' + esc(GL.fmtShort(oldest.date)) + ' →' : '') + '</small></div></div>';
+        '<div class="stat"><span>ดีที่สุด</span><b>' + esc(fmtNum(best.weight)) + '×' + best.reps + '</b><small>เซตหนักสุด</small></div>' +
+        '<div class="stat"><span>เล่นแล้ว</span><b>' + g.sessions.length + '</b><small>ครั้ง</small></div></div>';
       // 1.8: คำแนะนำจาก 1.7 อยู่ที่หน้านี้ (ไม่แสดงกลางการจด)
       const pseudo = { exerciseId: exId, equipment: g.equipment, weightMode: g.weightMode };
       const stall = P.stallStatus(state.workouts, pseudo, null, 3);
@@ -1119,10 +1217,9 @@
           '<button type="button" role="tab" data-action="trend-metric" data-v="e1rm" aria-selected="' + (metric === 'e1rm') + '" aria-label="1RM โดยประมาณ" class="' + (metric === 'e1rm' ? 'on' : '') + '">1RM</button></div>';
         h += '<div class="chart-wrap">' + window.GymCharts.line(pts, { unit: 'kg', label: metric === 'work' ? 'น้ำหนักทำงาน (เซตอ่อนสุด) ต่อครั้ง' : metric === 'top' ? 'น้ำหนักเซตหนักสุดต่อครั้ง' : '1RM โดยประมาณต่อครั้ง', fmtDate: GL.fmtShort, readout: function (p) { return GL.fmtShort(p.date) + ' · ' + fmtNum(p.value) + ' kg' + (p.reps ? ' × ' + p.reps : '') + (p.pr ? ' ◆ PR' : ''); } }) + '</div>';
         h += '<div class="chart-read" aria-live="polite"><span class="cr-t">' + esc(GL.fmtShort(pts[pts.length - 1].date)) + ' · ' + esc(fmtNum(pts[pts.length - 1].value)) + ' kg' + (pts[pts.length - 1].reps ? ' × ' + pts[pts.length - 1].reps : '') + (pts[pts.length - 1].pr ? ' ◆ PR' : '') + '</span></div>';
-        h += '<p class="hint">' + (metric === 'work' ? 'น้ำหนักของเซตที่อ่อนสุดในแต่ละครั้ง = น้ำหนักที่ทำได้ทุกเซต (เซตแรกที่หนักเกินแล้วลดลงมาไม่ทำให้กราฟตก)' : metric === 'top' ? 'น้ำหนักของเซตที่หนักสุดในแต่ละครั้ง' : '1RM โดยประมาณ (สูตร Epley: น้ำหนัก × (1 + reps/30)) ใช้เทียบแนวโน้มของท่านี้เท่านั้น ไม่แม่นเมื่อ reps สูง') +
-          ' · <b>◆ PR</b> = สถิติใหม่ของท่า+อุปกรณ์นี้ (ครั้งแรกที่เล่นไม่นับ)</p>';
+        h += '<div class="trend-help"><button type="button" class="iconbtn bare" data-action="help" data-k="trend" aria-label="อธิบายกราฟและตัวเลข">' + ico('info', 22) + '</button></div>';
       } else {
-        h += '<p class="hint">กราฟแนวโน้มจะขึ้นเมื่อเล่นท่านี้ครบ 4 ครั้ง (ตอนนี้ ' + pts.length + ' ครั้ง) — ดูตัวเลขแต่ละครั้งได้ด้านล่าง</p>';
+        h += '<div class="trend-dots" role="img" aria-label="เล่นแล้ว ' + pts.length + ' จาก 4 ครั้ง กราฟจะขึ้นเมื่อครบ 4 ครั้ง"><span>กราฟ</span>' + [0, 1, 2, 3].map(function (i) { return '<i class="' + (i < pts.length ? 'on' : '') + '"></i>'; }).join('') + '</div>';
       }
       if (state.sumView === 'week') {
         g.weeks.slice(0, 26).forEach(function (w) {
@@ -1137,7 +1234,7 @@
             '<div class="sum-nums"><div class="b">' + r.workingSets + ' เซต</div><div class="muted small">' + esc(fmtNum(r.volume)) + ' kg×reps</div></div></div>';
         });
       }
-      h += '<p class="hint">volume load = น้ำหนัก × reps รวมเฉพาะเซต working ที่ทำเสร็จ (' + esc(GL.WEIGHT_MODE_SHORT[g.weightMode] || '') + ') — ใช้ดูแนวโน้มของท่านี้เท่านั้น ไม่ใช่คะแนนว่ากล้ามโตขึ้น</p></section>';
+      h += '</section>';
     });
     return h;
   };
@@ -1147,13 +1244,13 @@
     const standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
     const finished = GL.finishedWorkouts().length;
     let h = '<div class="topbar"><button type="button" class="back" data-action="home">' + ico('back', 24) + 'หน้าแรก</button></div><h1>สำรอง / กู้คืนข้อมูล</h1>';
-    h += '<div class="notice">ข้อมูลทั้งหมดเก็บ <b>ในเครื่องนี้เท่านั้น</b> และ<b>ไม่ได้สำรองบน cloud อัตโนมัติ</b> ควรกด “ส่งออกข้อมูล” เป็นระยะ แล้วเก็บไฟล์ไว้ที่ Files/iCloud Drive ของคุณ</div>';
+    h += '<div class="notice">ข้อมูลอยู่ <b>ในเครื่องนี้เท่านั้น</b> ไม่มีสำรองอัตโนมัติ — ส่งออกเป็นระยะแล้วเก็บไฟล์ไว้ใน Files/iCloud</div>';
     if (!standalone) {
-      h += '<div class="notice warn">ตอนนี้เปิดผ่าน Safari ธรรมดา — iPhone อาจล้างข้อมูลเว็บที่ไม่ได้เปิดนาน แนะนำให้ Add to Home Screen แล้วเปิดจากไอคอน</div>';
+      h += '<div class="notice warn">เปิดจาก Safari ธรรมดา — iPhone อาจล้างข้อมูลที่ไม่ได้เปิดนาน ควร Add to Home Screen</div>';
     }
-    h += '<div class="card"><h3>ส่งออก (Export)</h3><p class="muted small">ได้ไฟล์ .json ตั้งชื่อตามวันที่ ที่รวมท่า แผน ประวัติ และการตั้งค่า</p>' +
+    h += '<div class="card"><h3>ส่งออก</h3>' +
       '<button type="button" class="btn primary" data-action="export">' + ico('backup', 22) + 'ส่งออกข้อมูล</button></div>';
-    h += '<div class="card"><h3>กู้คืน (Import)</h3><p class="muted small">เลือกไฟล์สำรอง แอปจะตรวจไฟล์และแสดงสรุปก่อน จะไม่ทับข้อมูลเดิมถ้าคุณยังไม่ยืนยัน</p>' +
+    h += '<div class="card"><h3>กู้คืน</h3><p class="muted small">แอปตรวจไฟล์และแสดงสรุปก่อน ไม่ทับข้อมูลจนกว่าจะยืนยัน</p>' +
       '<button type="button" class="btn" data-action="import-pick">เลือกไฟล์สำรอง</button></div>';
     h += '<div class="card"><h3>ข้อมูลในเครื่อง</h3>' +
       kv('หน่วยน้ำหนัก', esc(state.settings.unit || 'kg')) +
@@ -1162,7 +1259,7 @@
       kv('เวอร์ชันโครงข้อมูล', 'v' + GL.S.SCHEMA_VERSION) +
       kv('เวอร์ชันแอป', esc(GL.APP_VERSION)) +
       kv('ที่เก็บข้อมูลแบบถาวร', state.persisted === true ? 'ขอสิทธิ์แล้ว' : state.persisted === false ? 'เบราว์เซอร์ยังไม่รับรอง' : 'ไม่ทราบ') + '</div>';
-    h += '<div class="card"><h3>อัปเดตแอป</h3><p class="muted small">ถ้ามีเวอร์ชันใหม่ จะมีแถบแจ้งด้านบน แอปไม่รีโหลดเองกลางการจด</p>' +
+    h += '<div class="card"><h3>อัปเดตแอป</h3>' +
       '<button type="button" class="btn" data-action="check-update">ตรวจหาเวอร์ชันใหม่</button></div>';
     return h;
   };

@@ -337,16 +337,30 @@
     if (!input) return;
     let cur = Number(String(input.value).trim().replace(',', '.'));
     if (input.value.trim() === '' || !isFinite(cur)) cur = field === 'reps' && ex && dir > 0 ? Math.max(0, ex.repMin - 1) : 0;
-    const step = field === 'weight' ? ((ex && ex.step) || 2.5) : 1;
-    let next = +(cur + dir * step).toFixed(2);
-    if (next < 0) next = 0;
-    if (field === 'reps') next = Math.round(next);
+    let next;
+    if (field === 'weight') next = GL.nextWeight(ex, cur, dir);            // 2.1: มีรายการน้ำหนักของเครื่อง → ขยับไปค่าถัดไปบนรายการ
+    else { next = Math.round(cur + dir); if (next < 0) next = 0; }
     input.value = fmtNum(next);
     input.classList.remove('sug', 'bad');
     GL.setDraft(entry, 0, field, input.value);
+    if (field === 'weight') repredictReps(w, entry, ex, next);
     GL.scheduleSave(w);
     dropUndo();
     if (field === 'weight') { state.carry = { entryId: entryId, weight: next, after: 0 }; const slot = document.getElementById('carry-slot'); if (slot) slot.innerHTML = V.carryHtml(entry); }
+  }
+  // 2.1: เปลี่ยนน้ำหนักด้วยปุ่ม ± → คาด reps ใหม่ที่น้ำหนักนั้น (จาก 1RM โดยประมาณของครั้งก่อน) ถ้าผู้ใช้ยังไม่ได้พิมพ์ reps เอง
+  function repredictReps(w, entry, ex, weight) {
+    const slot = document.getElementById('pred-slot');
+    const prev = P.findPrevious(state.workouts, entry, w.id);
+    const est = prev && prev.comparable ? P.bestE1(P.workingCompleted(prev.entry)) : null;
+    const pr = est && weight > 0 ? P.repsAt(est, weight) : null;
+    if (slot) slot.textContent = pr === null ? '' : 'ที่ ' + fmtNum(weight) + ' kg คาดทำได้ราว ' + pr + ' reps';
+    if (pr === null || GL.draftOf(entry, 0).repsTouched) return;
+    const repMax = ex && ex.repMax > 0 ? ex.repMax : 12;
+    const reps = String(Math.max(1, Math.min(pr, repMax)));
+    const rIn = qIn(entry.id, 0, 'reps');
+    if (rIn) { rIn.value = reps; rIn.classList.add('sug'); }
+    GL.setDraft(entry, 0, 'reps', reps);
   }
 
   /* ----- ขั้นน้ำหนักต่อท่า (1.9) ----- */
@@ -365,6 +379,22 @@
     render();
     GL.toast((label || 'ตั้งขั้นน้ำหนัก') + ' ' + fmtNum(step) + ' kg แล้ว — ใช้กับปุ่ม ± และเป้าหมายครั้งหน้า');
     return true;
+  }
+
+  async function saveWeights(exId, text) {
+    const ex = GL.exById(exId);
+    if (!ex) return;
+    const wl = GL.parseWeightList(text);
+    if (wl.bad) { GL.toast('ใส่น้ำหนักเป็นตัวเลขคั่นด้วยจุลภาคหรือเว้นวรรค เช่น 12, 18, 24', { error: true }); return; }
+    if (wl.tooFew) { GL.toast('ต้องมีอย่างน้อย 2 ค่า (หรือเว้นว่างเพื่อไม่ใช้รายการ)', { error: true }); return; }
+    const rec = Object.assign({}, ex);
+    if (wl.list.length) rec.weights = wl.list; else delete rec.weights;
+    try { await S.put('exercises', rec); }
+    catch (e) { GL.toast('บันทึกไม่สำเร็จ', { error: true }); return; }
+    Object.keys(ex).forEach(function (k) { delete ex[k]; });
+    Object.assign(ex, rec);
+    GL.closeSheet(); render();
+    GL.toast(wl.list.length ? 'บันทึกน้ำหนักของเครื่อง ' + wl.list.length + ' ค่าแล้ว' : 'ล้างรายการน้ำหนักแล้ว');
   }
 
   // หลังยืนยันเซต: ถ้าน้ำหนักที่เคยจดไม่ลงตัวกับขั้นปัจจุบัน → เสนอขั้นที่แอปเดาได้ (ครั้งเดียวต่อท่า ปิดแล้วไม่ถามอีก)
@@ -562,7 +592,9 @@
       repMin: dflt.repMin, repMax: dflt.repMax, step: dflt.step, weightMode: dflt.weightMode,
       subs: [], archived: false, isSample: false, createdAt: new Date().toISOString()
     };
-    if (dflt.icon && GL.I.EX_KEYS.indexOf(dflt.icon) >= 0) rec.icon = dflt.icon;
+    const guessedArt = window.GymLibrary.artFor(name);                 // 2.1: ท่าใหม่ที่ชื่อตรงกับภาพชุดประกอบ
+    if (guessedArt) rec.icon = guessedArt;
+    else if (dflt.icon && GL.I.EX_KEYS.indexOf(dflt.icon) >= 0) rec.icon = dflt.icon;
     try { await S.put('exercises', rec); }
     catch (e) { GL.toast('สร้างท่าไม่สำเร็จ: ' + (e && e.message ? e.message : ''), { error: true }); return; }
     state.exercises.push(rec);
@@ -573,6 +605,49 @@
       return;
     }
     await addExercise(rec.id);
+  }
+
+  /* ----- 2.0: คลังท่า — ท่าจากคลังถูกสร้างเป็นระเบียนใหม่ (id = lib-…) ก็ต่อเมื่อผู้ใช้กดเพิ่มเท่านั้น ไม่แตะ/ไม่เขียนทับท่าที่มีอยู่ ----- */
+  async function libFinish(ex, created) {
+    const c = state.lib || { ctx: 'tab' };
+    if (c.ctx === 'session' && state.active) { await addExercise(ex.id); if (created) GL.toast('เพิ่ม “' + ex.name + '” เข้าท่าของคุณแล้ว'); return; }
+    if (c.ctx === 'swap' && c.entry) { await swapTo(c.entry, ex.id, c.mode); if (created) GL.toast('เพิ่ม “' + ex.name + '” เข้าท่าของคุณแล้ว'); return; }
+    if (c.ctx === 'plan' && state.sub && state.sub.draft) {
+      state.sub.draft.items.push({ exerciseId: ex.id, sets: 3 }); state.sub.dirty = true;
+      GL.closeSheet(); render(); GL.toast((created ? 'เพิ่ม “' + ex.name + '” แล้ว และ' : '') + 'ใส่เข้าแผนแล้ว (ยังไม่ได้กดบันทึกแผน)');
+      return;
+    }
+    GL.closeSheet();
+    state.exMuscle = ''; state.exQuery = ex.name;
+    render();
+    GL.toast(created ? 'เพิ่ม “' + ex.name + '” เข้าท่าของคุณแล้ว' : 'ท่า “' + ex.name + '” อยู่ในรายการของคุณ');
+  }
+  async function libAdd(slug) {
+    const en = window.GymLibrary.bySlug(slug);
+    if (!en) return;
+    const existing = GL.exById(en.id);
+    if (existing) {                                  // เคยเพิ่มแล้วแต่เก็บเข้าคลัง → นำกลับมาใช้ (ระเบียนเดิม ประวัติยังอยู่)
+      if (existing.archived) { existing.archived = false; try { await S.put('exercises', existing); } catch (e) { existing.archived = true; GL.toast('บันทึกไม่สำเร็จ', { error: true }); return; } }
+      await libFinish(existing, false); return;
+    }
+    const lower = en.name.trim().toLowerCase();
+    if (state.exercises.some(function (e) { return String(e.name).trim().toLowerCase() === lower; })) {
+      GL.toast('มีท่าชื่อ “' + en.name + '” อยู่แล้ว เลือกใช้ท่าเดิมแทน', { error: true }); return;
+    }
+    let icon = GL.guessIcon(en.name);
+    if (!icon || !GL.validIconKey(icon)) icon = '';
+    const rec = window.GymLibrary.toExercise(en, new Date().toISOString(), icon);
+    if (!rec.icon) delete rec.icon;
+    try { await S.put('exercises', rec); }
+    catch (e) { GL.toast('เพิ่มท่าไม่สำเร็จ: ' + (e && e.message ? e.message : ''), { error: true }); return; }
+    state.exercises.push(rec);
+    await libFinish(rec, true);
+  }
+  async function libUse(exId) {
+    const ex = GL.exById(exId);
+    if (!ex) return;
+    if (ex.archived) { ex.archived = false; try { await S.put('exercises', ex); } catch (e) { ex.archived = true; GL.toast('บันทึกไม่สำเร็จ', { error: true }); return; } }
+    await libFinish(ex, false);
   }
 
   /* ----- ตั้งค่า ----- */
@@ -610,12 +685,12 @@
   /* ---------- ท่า (Exercises) ---------- */
 
   function newExDraft() {
-    return { id: null, name: '', muscle: '', equipment: '', repMin: '8', repMax: '12', step: '2.5', restSec: '', weightMode: 'machine', subs: [], icon: '', note: '', hadHistory: false };
+    return { id: null, name: '', muscle: '', equipment: '', repMin: '8', repMax: '12', step: '2.5', restSec: '', weights: '', weightMode: 'machine', subs: [], icon: '', note: '', hadHistory: false };
   }
   function exToDraft(e) {
     return {
       id: e.id, name: e.name, muscle: e.muscle || '', equipment: e.equipment || '',
-      repMin: String(e.repMin), repMax: String(e.repMax), step: fmtNum(e.step), restSec: e.restSec ? String(e.restSec) : '', weightMode: e.weightMode,
+      repMin: String(e.repMin), repMax: String(e.repMax), step: fmtNum(e.step), restSec: e.restSec ? String(e.restSec) : '', weights: GL.weightsText(e), weightMode: e.weightMode,
       subs: (e.subs || []).slice(), icon: e.icon || '', note: e.note || '', hadHistory: GL.exerciseHasHistory(e.id)
     };
   }
@@ -645,6 +720,10 @@
       restSec = Number(rs);
     }
 
+    const wl = GL.parseWeightList(d.weights);
+    if (wl.bad) return badAdv('รายการน้ำหนักต้องเป็นตัวเลขคั่นด้วยจุลภาคหรือเว้นวรรค เช่น 12, 18, 24');
+    if (wl.tooFew) return badAdv('รายการน้ำหนักต้องมีอย่างน้อย 2 ค่า (หรือเว้นว่างถ้าไม่ใช้)');
+
     const existing = d.id ? GL.exById(d.id) : null;
     const id = d.id || S.uid('ex');
     const rec = {
@@ -658,9 +737,10 @@
       createdAt: existing && existing.createdAt ? existing.createdAt : new Date().toISOString()
     };
     const iconKey = d.icon || (!existing ? GL.guessIcon(name) : '');   // ท่าใหม่ที่ไม่ได้เลือกภาพ → เดาจากชื่อ
-    if (iconKey && GL.I.EX_KEYS.indexOf(iconKey) >= 0) rec.icon = iconKey;
+    if (iconKey && GL.validIconKey(iconKey)) rec.icon = iconKey;
     if (d.note && d.note.trim()) rec.note = d.note.trim().slice(0, 300);
     if (restSec) rec.restSec = restSec;
+    if (wl.list.length) rec.weights = wl.list;
     try { await S.put('exercises', rec); } catch (e) { return bad('บันทึกไม่สำเร็จ: ' + (e && e.message ? e.message : '')); }
     if (existing) {
       Object.keys(existing).forEach(function (k) { delete existing[k]; });
@@ -1022,7 +1102,7 @@
       case 'ex-next': goEntry(state.cur + 1); break;
       case 'ex-go': GL.closeSheet(); goEntry(Number(d.i)); break;
       case 'ex-list': if (state.active) GL.openSheet(V.exListSheet()); break;
-      case 'confirm-set': if (GL.rest) GL.rest.unlock(); confirmSet(d.entry, d.pending); break;
+      case 'confirm-set': confirmSet(d.entry, d.pending); break;
       case 'skip-set': skipSet(d.entry); break;
       case 'more-set': moreSet(d.entry); break;
       case 'add-warmup': openWarmup(d.entry); break;
@@ -1031,6 +1111,23 @@
       case 'step-save': {
         const en = activeEntry(d.entry || stepCtxEntry), inp = document.getElementById('step-in');
         if (en && inp) { const v = GL.parseWeight(inp.value); if (v === null || isNaN(v)) { GL.toast('ใส่ขั้นน้ำหนักเป็นตัวเลข เช่น 2.5', { error: true }); inp.focus(); break; } GL.closeSheet(); saveStep(en.exerciseId, v); }
+        break;
+      }
+      case 'weights-open': stepCtxEntry = d.entry; GL.openSheet(V.weightsSheet(d.entry)); break;
+      case 'weights-fill': {
+        const en = activeEntry(d.entry || stepCtxEntry), inp = document.getElementById('wl-in');
+        if (en && inp) {
+          const hist = P.weightsOf(state.workouts, en, 40, state.active && state.active.id).concat(P.workingCompleted(en).map(function (x) { return x.weight; }));
+          const cur = GL.parseWeightList(inp.value).list;
+          const all = P.cleanWeights(cur.concat(hist));
+          if (!all.length) { GL.toast('ยังมีน้ำหนักที่เคยเล่นไม่พอ (ต้องอย่างน้อย 2 ค่า)', { error: true }); break; }
+          inp.value = all.map(fmtNum).join(', ');
+        }
+        break;
+      }
+      case 'weights-save': {
+        const en = activeEntry(d.entry || stepCtxEntry), inp = document.getElementById('wl-in');
+        if (en && inp) saveWeights(en.exerciseId, inp.value);
         break;
       }
       case 'step-offer-yes': { const o = state.stepOffer; if (o) saveStep(o.exId, o.step, 'ใช้ขั้น'); break; }
@@ -1071,6 +1168,15 @@
         break;
       }
       case 'qx-open': openQuickEx(d.ctx, d); break;
+      case 'lib-open': state.lib = { ctx: d.ctx || 'tab', entry: d.entry || null, mode: d.mode || 'rest' }; GL.openSheet(V.libSheet()); break;
+      case 'lib-list': GL.openSheet(V.libSheet()); break;
+      case 'lib-pick': GL.openSheet(V.libDetail(d.slug)); break;
+      case 'lib-add': libAdd(d.slug); break;
+      case 'lib-use': libUse(d.id); break;
+      case 'help': GL.openSheet(V.helpSheet(d.k)); break;
+      case 'art-view': GL.openSheet(V.artSheet(d.ex)); break;
+      case 'art-open': GL.openSheet(V.artPicker()); break;
+      case 'art-pick': if (state.sub && state.sub.draft) { state.sub.draft.icon = d.v; state.sub.dirty = true; GL.closeSheet(); render(); } break;
       case 'qx-muscle': qxPick('muscle', d.v, t); break;
       case 'qx-equip': qxPick('equip', Number(d.i), t); break;
       case 'qx-save': saveQuickEx(); break;

@@ -11,7 +11,7 @@
 
   const GL = window.GL = {
     S: window.GymStorage, P: window.GymProgression, SM: window.GymSummary, I: window.GymIcons, PG: window.GymProgram,
-    APP_VERSION: '1.9.0',
+    APP_VERSION: '2.1.0',
     views: {}
   };
   const S = GL.S, P = GL.P, SM = GL.SM;
@@ -30,7 +30,7 @@
   GL.DEFAULT_MUSCLES = ['อก', 'หลัง', 'ไหล่ข้าง', 'ไหล่หลัง', 'ต้นขาหน้า', 'ต้นขาหลัง', 'ก้น', 'ไบเซ็ป', 'ไตรเซ็ป', 'หน้าท้อง', 'น่อง', 'ปลายแขน'];
 
   /* ---------- การตั้งค่า (เก็บใน settings store ทีละ key — ไม่ต้องเปลี่ยนโครงฐานข้อมูล) ---------- */
-  GL.DEFAULTS = { restSeconds: 90, restAuto: true, restSound: true, keepAwake: true, showTargets: false, restKeepAlive: false };
+  GL.DEFAULTS = { restSeconds: 90, restAuto: true, keepAwake: true, showTargets: false };
   GL.REST_PRESETS = [60, 90, 120, 180];
   GL.setting = function (key) {
     const v = window.GL.state.settings[key];
@@ -57,11 +57,13 @@
     [/leg\s*ext/i, 'leg_extension'], [/lying.*curl|prone.*curl/i, 'lying_curl'], [/leg\s*curl|hamstring/i, 'leg_curl'],
     [/calf/i, 'calf_raise'], [/cable\s*crunch/i, 'cable_crunch'], [/crunch|sit[\s-]?up|abs?\b/i, 'crunch'],
     [/pull[\s-]?down|lat\b/i, 'lat_pulldown'], [/single[\s-]?arm|one[\s-]?arm|unilateral/i, 'one_arm_row'], [/row/i, 'cable_row'],
-    [/rear|reverse\s*(pec|fly)/i, 'rear_fly'], [/lateral|side\s*raise/i, 'lateral_raise'], [/preacher/i, 'preacher'],
+    [/rear|face\s*pull|reverse\s*(pec|fly)/i, 'rear_fly'], [/lateral|side\s*raise/i, 'lateral_raise'], [/preacher/i, 'preacher'],
     [/(ez|bar).*curl|curl.*bar/i, 'bar_curl'], [/curl/i, 'curl'], [/push[\s-]?down|tricep|extension/i, 'pushdown'],
-    [/incline/i, 'incline_press'], [/chest\s*press|bench|press/i, 'chest_press'], [/cable.*fly|fly.*cable/i, 'cable_fly'], [/fly|pec/i, 'pec_fly']
+    [/incline/i, 'incline_press'], [/chest\s*press|bench|press/i, 'chest_press'], [/cable.*fly|fly.*cable|crossover/i, 'cable_fly'], [/fly|pec/i, 'pec_fly']
   ];
   GL.guessIcon = function (name) {
+    const a = window.GymLibrary && window.GymLibrary.artFor(name);       // 2.1: ท่าใหม่ที่ชื่อตรงกับภาพชุดประกอบ (เฉพาะที่ตรงชัดเจน)
+    if (a) return a;
     for (let i = 0; i < ICON_GUESS.length; i++) if (ICON_GUESS[i][0].test(name || '')) return ICON_GUESS[i][1];
     return '';
   };
@@ -263,6 +265,22 @@
       reps: t && t.reps != null ? String(t.reps) : ''
     };
   };
+  // 2.1: รายการน้ำหนักที่เครื่องมี (ex.weights, ไม่บังคับ) — แปลงข้อความ “12, 18, 24 30” เป็นรายการ
+  GL.parseWeightList = function (text) {
+    const toks = String(text || '').split(/[\s,;]+/).filter(Boolean), nums = [];
+    let bad = false;
+    toks.forEach(function (t) { const n = Number(t); if (!isFinite(n) || n <= 0 || n > 1000) bad = true; else nums.push(n); });
+    const list = P.cleanWeights(nums);
+    return { list: list.slice(0, 80), bad: bad, tooFew: !bad && toks.length > 0 && list.length < 2 };
+  };
+  GL.weightsText = function (ex) { return ex && Array.isArray(ex.weights) ? ex.weights.map(function (x) { return GL.fmtNum(x); }).join(', ') : ''; };
+  // น้ำหนักของ “ปุ่ม ±” : มีรายการ → ขยับไปค่าถัดไปบนรายการ; ไม่มีรายการ/พ้นปลายรายการ → ขยับตามขั้น
+  GL.nextWeight = function (ex, cur, dir) {
+    const onList = P.stepOnList(ex && ex.weights, cur, dir);
+    if (onList !== null) return onList;
+    const step = (ex && ex.step) || 2.5;
+    return Math.max(0, +(cur + dir * step).toFixed(2));
+  };
   GL.draftOf = function (entry, p) {
     const d = (entry.drafts && entry.drafts[p]) || null;
     const sug = GL.suggestion(entry);
@@ -390,9 +408,13 @@
     return order.map(function (g) { return { muscle: g, items: groups[g].sort(GL.byName) }; });
   };
   GL.iconKeyFor = function (ex) {
+    const art = window.GymArt && window.GymArt.forExercise(ex);         // 2.1: ภาพประกอบท่า (art/…) — ท่า PPL/คลัง หรือที่ผู้ใช้เลือกเอง
+    if (art) return window.GymArt.key(art);
     if (ex && ex.icon && GL.I.EX_KEYS.indexOf(ex.icon) >= 0) return ex.icon;
     return 'dumbbell';
   };
+  // icon ที่ใช้ได้ในระเบียนท่า: ไอคอนคนเส้นเดิม หรือ art:<รหัส>
+  GL.validIconKey = function (k) { return !!k && (GL.I.EX_KEYS.indexOf(k) >= 0 || !!(window.GymArt && window.GymArt.idOfKey(k))); };
 
   /* ---------- finalize: เปลี่ยน session ที่ค้างเป็นประวัติ (เก็บเฉพาะท่าที่มีเซตยืนยันแล้ว) ---------- */
 

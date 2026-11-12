@@ -139,8 +139,12 @@ test('1.7 น้ำหนักผสม: ตัดสินจากเซต�
   assert.ok(/37\.5/.test(t.reason));
 });
 
-test('1.7 น้ำหนักผสม จำนวนเท่ากัน → ใช้ค่าต่ำสุดเป็นน้ำหนักทำงาน และให้เป้า reps +1', () => {
+test('1.7→2.1 น้ำหนักเพิ่มขึ้นทุกเซต (40×10, 42.5×9, 45×8) = ไล่หาน้ำหนัก → ใช้เซตหนักสุดที่ยังได้ ≥ ขั้นต่ำ (45 × 9)', () => {
   const t = suggest([session('2026-10-01', sets([[40, 10], [42.5, 9], [45, 8]]))]);
+  assert.strictEqual(t.kind, 'ramp'); assert.strictEqual(t.weight, 45); assert.strictEqual(t.reps, 9);
+});
+test('1.7 น้ำหนักผสมที่ไม่ใช่การไล่ (เซตหนักก่อน 45, 42.5, 40) → ใช้ค่าต่ำสุดเป็นน้ำหนักทำงาน และให้เป้า reps +1', () => {
+  const t = suggest([session('2026-10-01', sets([[45, 10], [42.5, 9], [40, 10]]))]);
   assert.strictEqual(t.kind, 'mixed'); assert.strictEqual(t.weight, 40); assert.strictEqual(t.reps, 11);
 });
 
@@ -728,40 +732,133 @@ test('1.8 ลำดับแผนรายสัปดาห์ในไฟล�
   assert.strictEqual(Object.prototype.hasOwnProperty.call(ST.validateBackup(backupOf()).clean.settings, 'weekPlan'), false);
 });
 
-/* ================= 1.9: ไฟล์เสียง + ตั้งค่า restKeepAlive ================= */
-const CM = require('../chime.js');
-function wavInfo(b) {
-  const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
-  const tag = function (o) { return String.fromCharCode(b[o], b[o + 1], b[o + 2], b[o + 3]); };
-  return { riff: tag(0), wave: tag(8), fmt: tag(12), data: tag(36), fmtCode: dv.getUint16(20, true), ch: dv.getUint16(22, true), rate: dv.getUint32(24, true), bits: dv.getUint16(34, true),
-    riffLen: dv.getUint32(4, true), dataLen: dv.getUint32(40, true), dv: dv };
-}
-test('chime: ไฟล์ WAV ถูกต้อง (PCM 16 บิต mono 8 kHz) ความยาวข้อมูลตรงกับหัวไฟล์', () => {
-  const b = CM.chime(), w = wavInfo(b);
-  assert.deepStrictEqual([w.riff, w.wave, w.fmt, w.data], ['RIFF', 'WAVE', 'fmt ', 'data']);
-  assert.deepStrictEqual([w.fmtCode, w.ch, w.rate, w.bits], [1, 1, 8000, 16]);
-  assert.strictEqual(w.dataLen, b.length - 44); assert.strictEqual(w.riffLen, b.length - 8);
-  assert.ok(Math.abs(CM.chimeSeconds() - 1.76) < 0.01, CM.chimeSeconds());
-});
-test('chime: เสียงดังพอแต่ไม่แตก (peak ระหว่าง 0.6–1.0 ของ full scale)', () => {
-  const b = CM.chime(), w = wavInfo(b); let peak = 0;
-  for (let i = 0; i < w.dataLen / 2; i++) peak = Math.max(peak, Math.abs(w.dv.getInt16(44 + i * 2, true)));
-  assert.ok(peak > 0.6 * 32767 && peak <= 32767, peak);
-});
-test('restTrack: เงียบเท่าเวลาพักเป๊ะ แล้วตามด้วยเสียงเตือน, เกินเพดาน → null', () => {
-  const b = CM.restTrack(10), w = wavInfo(b);
-  assert.strictEqual(w.dataLen / 2, 10 * 8000 + Math.round(CM.chimeSeconds() * 8000));
-  for (let i = 0; i < 10 * 8000; i += 997) assert.strictEqual(w.dv.getInt16(44 + i * 2, true), 0, 'ช่วงเงียบต้องเป็นศูนย์ที่ ' + i);
-  let loud = 0; for (let i = 10 * 8000; i < w.dataLen / 2; i++) loud = Math.max(loud, Math.abs(w.dv.getInt16(44 + i * 2, true)));
-  assert.ok(loud > 0.6 * 32767, 'ท้ายไฟล์ต้องมีเสียง');
-  assert.strictEqual(CM.restTrack(CM.MAX_SEC + 1), null);
-  assert.ok(CM.restTrack(CM.MAX_SEC) !== null);
-  assert.ok(wavInfo(CM.restTrack(0)).dataLen / 2 >= 8000, 'ขั้นต่ำเงียบ 1 วินาที');
-});
+/* ================= 1.9→2.1: ตั้งค่า restKeepAlive (เลิกใช้เสียงแล้ว แต่ไฟล์สำรองเก่ายังนำเข้าได้) ================= */
 test('ตั้งค่า restKeepAlive: เก็บเมื่อเป็น boolean เท่านั้น และไม่เพิ่มคีย์เมื่อไม่มี', () => {
   assert.strictEqual(ST.validateBackup(backupOf({ settings: { unit: 'kg', restKeepAlive: true } })).clean.settings.restKeepAlive, true);
   assert.strictEqual(ST.validateBackup(backupOf({ settings: { unit: 'kg', restKeepAlive: 'on' } })).clean.settings.restKeepAlive, undefined);
   assert.strictEqual(Object.prototype.hasOwnProperty.call(ST.validateBackup(backupOf()).clean.settings, 'restKeepAlive'), false);
+});
+
+/* ================= 2.0: คลังท่า ================= */
+const LB = require('../library.js');
+const fs = require('fs'), path = require('path');
+test('คลังท่า: จำนวน/ฟิลด์ครบ/ไม่มีดัมเบล/id ไม่ซ้ำและไม่ชนกับท่า PPL', () => {
+  const es = LB.entries();
+  assert.ok(es.length >= 55, es.length);
+  const ids = new Set(es.map(function (e) { return e.id; })); assert.strictEqual(ids.size, es.length);
+  const ppl = new Set(PG.exercises('2026-01-01T00:00:00Z').map(function (e) { return e.id; }));
+  es.forEach(function (e) {
+    assert.ok(e.id.indexOf('lib-') === 0 && !ppl.has(e.id), e.id);
+    assert.ok(e.name && e.muscle && e.equipment && e.weightMode, e.id);
+    assert.ok(e.repMin >= 1 && e.repMax > e.repMin && e.step > 0, e.id);
+    assert.ok(['เครื่อง', 'สายเคเบิล', 'บาร์เบล', 'Smith Machine', 'น้ำหนักตัว'].indexOf(e.equipment) >= 0, 'ไม่มีดัมเบล/อื่น ๆ: ' + e.id + ' ' + e.equipment);
+  });
+  assert.ok(!es.some(function (e) { return /dumbbell/i.test(e.name); }));
+});
+test('2.1 ภาพประกอบ: ทุกภาพมีไฟล์ svg จริง ไม่ใหญ่เกิน และท่า PPL/ท่าคลังที่ตรงกันได้ภาพ ส่วนท่าที่ผู้ใช้สร้างเองไม่ได้ถ้าไม่ได้เลือก', () => {
+  const AR = require('../art.js');
+  let total = 0;
+  AR.ROWS.forEach(function (r) { const f = path.join(__dirname, '..', 'art', r[0] + '.svg'); assert.ok(fs.existsSync(f), r[0]); const sz = fs.statSync(f).size; assert.ok(sz > 500 && sz < 40000, r[0] + ' ' + sz); total += sz; });
+  assert.strictEqual(AR.ROWS.length, 72);
+  assert.ok(total < 600000, total);
+  assert.ok(AR.forId('ppl-leg-press'));
+  assert.strictEqual(AR.forId('user-123'), null);
+  assert.strictEqual(AR.forExercise({ id: 'user-1', name: 'Leg Press', icon: '' }), null, 'ชื่อตรงก็ไม่ใส่ภาพให้ท่าเดิมของผู้ใช้');
+  assert.ok(AR.forExercise({ id: 'user-1', icon: AR.key(AR.ROWS[0][0]) }));
+  assert.strictEqual(AR.idOfKey('art:nope'), null);
+  assert.ok(!LB.entries().some(function (e) { return e.equipment === 'ดัมเบล'; }));
+});
+test('คลังท่า: ชื่อคล้ายกันถามให้ใช้ท่าเดิม (ไม่แก้/ไม่ทับ) · ท่าคนละอย่างไม่ถูกจับ', () => {
+  assert.ok(LB.nameSimilar('Lat Pulldown', 'Wide-Grip Lat Pulldown'));
+  assert.ok(LB.nameSimilar('cable crossover', 'Cable Crossover'));
+  assert.ok(LB.nameSimilar('Shoulder Press (Machine)', 'Machine Shoulder Press'));
+  assert.ok(!LB.nameSimilar('Seated Leg Curl', 'Lying Leg Curl'));
+  assert.ok(!LB.nameSimilar('Barbell Curl', 'Barbell Squat'));
+  assert.ok(!LB.nameSimilar('', 'Barbell Curl'));
+  const en = LB.bySlug('Cable_Crossover');
+  const mine = [{ id: 'user-1', name: 'Cable Crossover', archived: false }, { id: 'user-2', name: 'Cable Curl', archived: false }, { id: 'user-3', name: 'cable crossover', archived: true }, { id: 'lib-Cable_Crossover', name: 'Cable Crossover', archived: false }];
+  const snapshot = JSON.stringify(mine);
+  assert.deepStrictEqual(LB.similar(en, mine).map(function (e) { return e.id; }), ['user-1']);
+  assert.strictEqual(JSON.stringify(mine), snapshot, 'ไม่แก้ข้อมูลที่ส่งเข้ามา');
+});
+test('คลังท่า: toExercise สร้างระเบียนใหม่ในรูปแบบเดียวกับท่าปกติ (ผ่านตรวจไฟล์สำรอง) ไม่มีฟิลด์พิเศษ', () => {
+  const en = LB.entries()[0];
+  const rec = LB.toExercise(en, '2026-11-10T00:00:00Z', '');
+  assert.strictEqual(rec.id, en.id); assert.strictEqual(rec.isSample, false); assert.strictEqual(rec.archived, false);
+  const r = ST.validateBackup(backupOf({ exercises: [rec] }));
+  assert.ok(r.ok, JSON.stringify(r.errors));
+  assert.deepStrictEqual(Object.keys(r.clean.exercises[0]).filter(function (k) { return ['fromLib', 'photo', 'image'].indexOf(k) >= 0; }), []);
+});
+
+/* ================= 2.1: ไล่น้ำหนัก / รายการน้ำหนักของเครื่อง / 1RM ================= */
+const HEX = { repMin: 8, repMax: 12, step: 3 };
+test('2.1 ไล่น้ำหนัก 24×25, 30×20, 39×10 → 39 × 11 (ไม่ถอยไป 24)', () => {
+  const t = suggest([session('2026-11-04', sets([[24, 25], [30, 20], [39, 10]]))], HEX);
+  assert.strictEqual(t.weight, 39); assert.strictEqual(t.reps, 11); assert.strictEqual(t.kind, 'ramp');
+});
+test('2.1 น้ำหนักซ้ำในเซตหนัก (12×15, 18×11, 18×8) ไม่ใช่การไล่ → ใช้เซตที่อ่อนสุดเหมือน 1.9', () => {
+  const t = suggest([session('2026-11-04', sets([[12, 15], [18, 11], [18, 8]]))], { repMin: 10, repMax: 15, step: 5 });
+  assert.strictEqual(t.kind, 'mixed'); assert.strictEqual(t.weight, 12);
+});
+test('2.1 เซตหนักก่อนแล้วลดลง (ไม่ใช่ไล่น้ำหนัก) ยังใช้เซตที่อ่อนสุดเหมือนเดิม', () => {
+  const t = suggest([session('2026-11-04', sets([[39, 10], [30, 12], [30, 12]]))], HEX);
+  assert.strictEqual(t.weight, 30); assert.strictEqual(t.kind, 'mixed');
+});
+test('2.1 ไล่น้ำหนักแล้วเซตหนักสุดถึงเพดาน → เพิ่มน้ำหนักจากเซตนั้น', () => {
+  const t = suggest([session('2026-11-04', sets([[24, 14], [30, 12], [36, 12]]))], { repMin: 8, repMax: 12, step: 3 });
+  assert.strictEqual(t.kind, 'add_weight'); assert.strictEqual(t.weight, 39);
+});
+test('2.1 เครื่องมีรายการน้ำหนัก: แนะนำ 23 แต่มี 24 และไหว → ใช้ 24 พร้อมคาด reps', () => {
+  const t = suggest([session('2026-11-04', sets([[18, 20], [18, 20], [18, 20]]))], { repMin: 8, repMax: 12, step: 5, weights: [12, 18, 24, 30] });
+  assert.strictEqual(t.weight, 24); assert.strictEqual(t.kind, 'add_weight');
+});
+test('2.1 เครื่องมีรายการน้ำหนัก: ขั้นถัดไปหนักเกิน (คาด reps ต่ำมาก) → อยู่ที่น้ำหนักเดิมแล้วเพิ่ม reps', () => {
+  const t = suggest([session('2026-11-04', sets([[18, 12], [18, 12], [18, 12]]))], { repMin: 8, repMax: 12, step: 5, weights: [12, 18, 24, 30] });
+  assert.strictEqual(t.weight, 18); assert.strictEqual(t.kind, 'add_reps'); assert.strictEqual(t.reps, 13);
+  assert.ok(/24/.test(t.reason));
+});
+test('2.1 ขั้นเล็ก (ไม่มีรายการน้ำหนัก): 40×12 ×3 ขั้น 2.5 → 42.5 × 8 เหมือนเดิม (ขึ้นได้จริง)', () => {
+  const t = suggest([session('2026-11-04', sets([[40, 12], [40, 12], [40, 12]]))], { repMin: 8, repMax: 12, step: 2.5 });
+  assert.strictEqual(t.weight, 42.5); assert.strictEqual(t.reps, 8); assert.strictEqual(t.kind, 'add_weight');
+});
+test('2.1 กระโดดใหญ่เกินไป (ไม่มีรายการ): 18×12 ×3 ขั้น 5 → 23 คาดทำได้ ~2 reps จึงอยู่ 18 แล้วเพิ่ม reps', () => {
+  const t = suggest([session('2026-11-04', sets([[18, 12], [18, 12], [18, 12]]))], { repMin: 8, repMax: 12, step: 5 });
+  assert.strictEqual(t.weight, 18); assert.strictEqual(t.kind, 'add_reps'); assert.ok(t.reps >= 13, t.reps);
+  assert.ok(/23/.test(t.reason), t.reason);
+});
+test('2.1 ขั้นตรงกับรายการแต่กระโดดเกินไป: 18×12 ขั้น 6 รายการ 12/18/24/30 → อยู่ 18 (24 คาดทำได้ ~1 rep)', () => {
+  const t = suggest([session('2026-11-04', sets([[18, 12], [18, 12], [18, 12]]))], { repMin: 8, repMax: 12, step: 6, weights: [12, 18, 24, 30] });
+  assert.strictEqual(t.weight, 18); assert.strictEqual(t.kind, 'add_reps');
+});
+test('2.1 ขั้นตรงกับรายการและไหว: 40×12 รายการ 30/35/40/45 → 45 (คาดทำได้ ≥ ต่ำสุด−2)', () => {
+  const t = suggest([session('2026-11-04', sets([[40, 12], [40, 12], [40, 12]]))], { repMin: 8, repMax: 12, step: 5, weights: [30, 35, 40, 45] });
+  assert.strictEqual(t.weight, 45); assert.strictEqual(t.kind, 'add_weight');
+});
+test('2.1 ลดน้ำหนัก (deload) ปัดลงตามรายการที่เครื่องมี', () => {
+  const h = [session('2026-11-04', sets([[30, 5], [30, 5], [30, 5]])), session('2026-10-28', sets([[30, 6], [30, 6], [30, 6]]))];
+  const t = suggest(h, { repMin: 8, repMax: 12, step: 5, weights: [12, 18, 24, 30] });
+  assert.strictEqual(t.kind, 'deload'); assert.strictEqual(t.weight, 24);
+});
+test('2.1 e1rm: Epley w×(1+r/30), ใช้เฉพาะ 1–12 reps; repsAt กลับสูตรปัดลง', () => {
+  assert.strictEqual(P.e1rm(100, 5), 116.67); assert.strictEqual(P.e1rm(24, 25), null); assert.strictEqual(P.e1rm(24, 0), null);
+  assert.strictEqual(P.repsAt(P.e1rm(100, 5), 100), 5);
+  assert.strictEqual(P.repsAt(25.2, 24), 1);
+});
+test('2.1 stepOnList / cleanWeights', () => {
+  assert.deepStrictEqual(P.cleanWeights([30, 24, '24', 39, -1, 'x', 0]), [24, 30, 39]);
+  assert.deepStrictEqual(P.cleanWeights([24]), []);
+  assert.strictEqual(P.stepOnList([24, 30, 39], 30, 1), 39); assert.strictEqual(P.stepOnList([24, 30, 39], 30, -1), 24);
+  assert.strictEqual(P.stepOnList([24, 30, 39], 39, 1), null); assert.strictEqual(P.stepOnList([24, 30, 39], 27, 1), 30);
+  assert.strictEqual(P.stepOnList([], 30, 1), null);
+});
+test('2.1 verdict: ไล่น้ำหนักเทียบครั้งก่อนที่เป็นน้ำหนักเดียว ไม่ถูกมองว่าตก', () => {
+  const v = P.verdict([{ weight: 24, reps: 25 }, { weight: 30, reps: 20 }, { weight: 39, reps: 10 }], [{ weight: 24, reps: 12 }, { weight: 24, reps: 12 }, { weight: 24, reps: 12 }], null, HEX);
+  assert.strictEqual(v.state, 'up'); assert.strictEqual(v.work, 39);
+});
+test('2.1 backup: ex.weights เก็บเมื่อเป็นตัวเลขถูกต้อง ≥ 2 ค่า (เรียงและไม่ซ้ำ) ไม่งั้นไม่ใส่คีย์', () => {
+  const mk = w => ST.validateBackup(backupOf({ exercises: [{ id: 'ex-1', name: 'A', muscle: 'อก', equipment: 'เครื่อง', repMin: 8, repMax: 12, step: 5, weightMode: 'machine', weights: w }] })).clean.exercises[0];
+  assert.deepStrictEqual(mk([30, 24, 24, 39]).weights, [24, 30, 39]);
+  assert.strictEqual(mk([24]).weights, undefined); assert.strictEqual(mk('24,30').weights, undefined); assert.strictEqual(mk(['24', '30']).weights, undefined);
 });
 
 console.log('\n' + passed + '/' + (passed + failed) + ' ผ่าน');

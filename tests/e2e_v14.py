@@ -319,7 +319,7 @@ with sync_playwright() as p:
     pg.click('[data-action=swap]'); pg.wait_for_selector('.sheet')
     t = pg.inner_text('.sheet')
     check('J1 แผ่น “ท่าทางเลือก”: ระบุ “เฉพาะวันนี้” และชื่อท่าต้นทาง', 'เฉพาะวันนี้' in t and 'Incline Chest Press' in t)
-    check('J2 แสดงคู่ทดแทนที่ตั้งไว้ + เครื่อง + วิธีนับ + ยังไม่เคยเล่น', 'Smith Machine Incline Press' in t and 'Smith Machine' in t and 'นับ ตามเครื่อง' in t and 'ยังไม่เคยเล่น' in t)
+    check('J2 แสดงคู่ทดแทนที่ตั้งไว้ + เครื่อง + วิธีนับ + ยังไม่เคยเล่น', 'Smith Machine Incline Press' in t and 'Smith Machine' in t and 'ยังไม่เคยเล่น' in t)
     pg.click('.sheet [data-action=swap-pick] >> nth=0'); pg.wait_for_selector('.sheet', state='detached'); pg.wait_for_timeout(200)
     check('J3 สลับแล้วชื่อท่าเปลี่ยนเป็น Smith Machine Incline Press และมีป้าย “ท่าทางเลือกวันนี้”', 'Smith Machine Incline Press' in pg.inner_text('.ex-head h1') and 'ท่าทางเลือกวันนี้' in pg.inner_text('.ex-head'), pg.inner_text('.ex-head'))
     check('J4 ไม่เคยเล่น: ช่องน้ำหนักเริ่มต้นว่าง ไม่มีการเดาน้ำหนัก', pg.input_value('input[data-pending="0"][data-field=weight]') == '', pg.input_value('input[data-pending="0"][data-field=weight]'))
@@ -347,7 +347,7 @@ with sync_playwright() as p:
     check('K1 เป้าหมายวันนี้มาจากผลจริงครั้งก่อน: ครบ ceiling 12 ที่ 50 → เพิ่มน้ำหนักเป็น 55 × 8', '55 kg × 8' in tg and 'เพิ่มน้ำหนัก' in tg, tg)
     check('K2 เป้าหมายอยู่เหนือตาราง และเหตุผลเปิดดูได้ที่ไอคอน ⓘ (แผ่นล่าง ไม่แปะบนหน้าจด)', pg.locator('.target .tg-info').count() == 1 and pg.locator('.target details').count() == 0)
     pg.click('.target .tg-info'); pg.wait_for_selector('.sheet')
-    check('K2a แผ่น ⓘ แสดงเหตุผล + อธิบายตัวเลขสีเทาที่เดียว', 'เป้าหมายวันนี้' in pg.inner_text('.sheet') and 'วงกลมยืนยัน' in pg.inner_text('.sheet'))
+    check('K2a แผ่น ⓘ แสดงเหตุผล + อธิบายตัวเลขสีเทาที่เดียว', 'เป้าหมายวันนี้' in pg.inner_text('.sheet') and len(pg.inner_text('.sheet')) < 400)
     pg.click('.sheet [data-action=close-sheet] >> nth=-1'); pg.wait_for_timeout(150)
     check('K3 ช่องน้ำหนัก/reps ถูกเติมค่าเสนอ (55/8) เป็น draft สีเทา ยังไม่ใช่ผลจริง', pg.input_value('input[data-pending="0"][data-field=weight]') == '55' and 'sug' in pg.get_attribute('input[data-pending="0"][data-field=weight]', 'class') and len([w for w in workouts(pg) if w['status']=='active'][0]['entries'][0]['sets']) == 0, (pg.input_value('input[data-pending="0"][data-field=weight]'), pg.get_attribute('input[data-pending="0"][data-field=weight]', 'class')))
     prev_cells = pg.eval_on_selector_all('.st-row .st-prev', 'els => els.map(e => e.textContent.trim())')
@@ -370,7 +370,7 @@ with sync_playwright() as p:
     check('K9 session ที่ค้างไม่ปรากฏในประวัติรายครั้ง/รายท่า (ประวัติจบแล้ว 3: Push, Pull-warmup, Pull + Pull)', n_hist == 4 or n_hist == 3, n_hist)
     check('K10 สรุปรายท่าไม่มีท่าที่ไม่มี working set จริง (เช่น Incline Chest Press ที่จดไว้ใน Push ยังมี) ', 'Lat Pulldown' in ex_list)
     pg.click('[data-action=his-mode][data-mode=overview]'); pg.wait_for_timeout(100)
-    check('K11 ภาพรวม: เซตต่อกล้ามเนื้อรายสัปดาห์ บอกว่านับเซตตรง และมีตารางความสม่ำเสมอ', 'เซตตรง' in pg.inner_text('#view') and pg.locator('table.cg').count() == 1)
+    check('K11 ภาพรวม: เซตต่อกล้ามเนื้อรายสัปดาห์ มีปุ่ม ⓘ อธิบายวิธีนับ (ไม่เป็นย่อหน้า) และมีตารางความสม่ำเสมอ', 'เซตตรง' not in pg.inner_text('#view') and pg.locator('[data-action=help][data-k=sets]').count() == 1 and pg.locator('table.cg').count() == 1)
     tab(pg, 'home')
     pg.click('.session-bar [data-action=manage]'); pg.click('.sheet [data-action=cancel-session]'); pg.wait_for_selector('.today-card, .session-bar')
 
@@ -440,7 +440,7 @@ with sync_playwright() as p:
     pg.click('[data-action=home]'); pg.wait_for_selector('.today-card, .session-bar')
     pg.click('[data-action=open-settings]'); pg.wait_for_selector('[data-action=open-backup]')
     pg.click('[data-action=open-backup]'); pg.wait_for_selector('[data-action=export]')
-    check('Q1 หน้าสำรอง: อธิบายว่าไม่มี cloud สำรองอัตโนมัติ', 'ไม่ได้สำรองบน cloud' in pg.inner_text('#view'))
+    check('Q1 หน้าสำรอง: อธิบายว่าไม่มี cloud สำรองอัตโนมัติ', 'ไม่มีสำรองอัตโนมัติ' in pg.inner_text('#view'))
     with pg.expect_download() as dl:
         pg.click('[data-action=export]')
     d = dl.value

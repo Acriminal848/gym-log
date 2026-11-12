@@ -1,13 +1,11 @@
-/* library.js — คลังท่าสำเร็จรูป (เฉพาะ machine / Smith / cable และบาร์เบลที่ระดับ beginner · ยังไม่มีดัมเบล)
+/* library.js — คลังท่าสำเร็จรูป (machine / Smith / cable / บาร์เบลระดับ beginner + ท่า PPL สำรอง 31 ท่าที่มีภาพประกอบใน art.js)
  *
- * ที่มา: free-exercise-db (https://github.com/yuhonas/free-exercise-db) ประกาศเป็น Unlicense (สาธารณสมบัติ)
- *   — ใช้รูปจากแหล่งเดียวนี้เท่านั้น ท่าที่ไม่มีรูปในคลังนี้จะไม่แสดงรูป (ไม่ไปหยิบรูปจากที่อื่นมาปน)
- *   — รูปย่อเป็น 360×240 JPEG อยู่ใน lib/<รหัส>/0.jpg และ 1.jpg (ท่าเริ่ม / ท่าสุดช่วง) ไม่ได้ใส่ใน cache ล่วงหน้า แต่เก็บเมื่อเปิดดูครั้งแรก
+ * ที่มาของรายชื่อ: free-exercise-db (https://github.com/yuhonas/free-exercise-db, Unlicense/สาธารณสมบัติ) — ใช้เฉพาะ “รายชื่อและค่าเริ่มต้น” ไม่ใช้รูปถ่ายอีกแล้ว (2.1)
  *
  * ความปลอดภัยของท่าที่ผู้ใช้สร้างเอง:
- *   — ท่าจากคลังไม่อยู่ในฐานข้อมูลจนกว่าจะกด “เพิ่ม” แล้วจึงสร้างระเบียนใหม่ id = 'lib-<รหัส>' (ไม่ชนกับ id ของท่าผู้ใช้/ท่า PPL)
- *   — ไม่เคยเขียนทับ/แก้/ลบระเบียนที่มีอยู่ ถ้ามีท่าชื่อคล้ายกัน แอปแค่ถามว่าจะ “ใช้ท่าเดิมของคุณ” ไหม
- *   — รูปผูกกับ id (lib-… หรือ ppl-… ที่ระบุใน PPL_PHOTO) ไม่เก็บอะไรเพิ่มในข้อมูลท่า จึงไม่มีฟิลด์ใหม่ในฐานข้อมูล
+ *   — ท่าจากคลังไม่อยู่ในฐานข้อมูลจนกว่าจะกด “เพิ่ม” แล้วจึงสร้างระเบียนใหม่ (id lib-…) เท่านั้น
+ *   — ไม่เคยเขียนทับ/แก้/ลบระเบียนที่มีอยู่ ถ้ามีท่าชื่อคล้ายกัน แอปแค่ถามว่าจะใช้ท่าเดิมไหม
+ *   — ท่าที่เคยเพิ่มจากคลังรุ่น 2.0 (lib-<รหัสเดิม>) ยังอยู่ครบ ภาพผูกที่ id ตอนแสดงผลผ่าน art.js
  */
 (function (global) {
   'use strict';
@@ -80,42 +78,26 @@
     ["Standing_Cable_Wood_Chop", "Cable Wood Chop", "หน้าท้อง", "สายเคเบิล", "cable", 10, 15, 2.5],
     ["Cable_Wrist_Curl", "Cable Wrist Curl", "ปลายแขน", "สายเคเบิล", "cable", 12, 20, 2.5],
     ["Seated_Palm-Up_Barbell_Wrist_Curl", "Barbell Wrist Curl", "ปลายแขน", "บาร์เบล", "barbell_total", 12, 20, 2.5]];
-  // ท่า PPL เดิมที่มีท่าเดียวกันในคลัง → ใช้รูปของคลังเป็นรูปประกอบ (ไม่เพิ่มเป็นท่าใหม่)
-  const PPL_PHOTO = {
-  "ppl-pec-deck": "Butterfly",
-  "ppl-smith-incline-press": "Smith_Machine_Incline_Bench_Press",
-  "ppl-lat-pulldown": "Wide-Grip_Lat_Pulldown",
-  "ppl-seated-cable-row-close": "Seated_Cable_Rows",
-  "ppl-reverse-pec-deck": "Reverse_Machine_Flyes",
-  "ppl-cable-rear-delt-fly": "Cable_Rear_Delt_Fly",
-  "ppl-preacher-curl-machine": "Machine_Preacher_Curls",
-  "ppl-cable-curl": "Standing_Biceps_Cable_Curl",
-  "ppl-triceps-pushdown": "Triceps_Pushdown",
-  "ppl-triceps-extension-machine": "Machine_Triceps_Extension",
-  "ppl-leg-press": "Leg_Press",
-  "ppl-hack-squat": "Hack_Squat",
-  "ppl-leg-extension": "Leg_Extensions",
-  "ppl-seated-leg-curl": "Seated_Leg_Curl",
-  "ppl-lying-leg-curl": "Lying_Leg_Curls",
-  "ppl-calf-raise-machine": "Standing_Calf_Raises",
-  "ppl-leg-press-calf-raise": "Calf_Press_On_The_Leg_Press_Machine",
-  "ppl-ab-crunch-machine": "Ab_Crunch_Machine",
-  "ppl-cable-crunch": "Cable_Crunch"
-};
+  const SRC = { name: 'free-exercise-db', url: 'https://github.com/yuhonas/free-exercise-db', license: 'Unlicense (สาธารณสมบัติ)' };   // เฉพาะรายชื่อ
 
-  const SRC = { name: 'free-exercise-db', url: 'https://github.com/yuhonas/free-exercise-db', license: 'Unlicense (สาธารณสมบัติ)' };
-
+  const A = function () { return global.GymArt || (typeof require === 'function' ? require('./art.js') : null); };
+  function fedb(r) { return { slug: r[0], id: 'lib-' + r[0], name: r[1], muscle: r[2], equipment: r[3], weightMode: r[4], repMin: r[5], repMax: r[6], step: r[7] }; }
+  // รายการที่แสดงในคลัง: ท่า free-exercise-db ที่ไม่ซ้ำกับภาพชุดใหม่ + ท่าที่มีภาพประกอบ (art.js) ที่ยังไม่มีในแอป
   function entries() {
-    return ROWS.map(function (r) { return { slug: r[0], id: 'lib-' + r[0], name: r[1], muscle: r[2], equipment: r[3], weightMode: r[4], repMin: r[5], repMax: r[6], step: r[7] }; });
+    const art = A(), out = [];
+    // ซ่อนเฉพาะท่าที่แอปมีอยู่แล้ว (PPL) — ท่าอื่นยังเสนอ โดยใช้ภาพชุดใหม่ผ่าน id เดิม
+    ROWS.forEach(function (r) { const aid = art && art.forId('lib-' + r[0]);
+      if (!(aid && art.inPpl(aid))) out.push(fedb(r)); });
+    if (art) art.entries().forEach(function (e) { out.push(e); });
+    return out;
   }
-  function bySlug(slug) { const l = entries(); for (let i = 0; i < l.length; i++) if (l[i].slug === slug) return l[i]; return null; }
-  // รหัสรูปของท่า (id ของท่าในแอป) หรือ null ถ้าไม่มีรูปในคลัง
-  function photoSlug(exId) {
-    if (typeof exId !== 'string') return null;
-    if (exId.indexOf('lib-') === 0) { const s = exId.slice(4); return ROWS.some(function (r) { return r[0] === s; }) ? s : null; }
-    return Object.prototype.hasOwnProperty.call(PPL_PHOTO, exId) ? PPL_PHOTO[exId] : null;
+  // หาจาก slug (รวมท่า free-exercise-db ที่ซ่อนจากรายการเพราะมีภาพชุดใหม่แทน)
+  function bySlug(slug) {
+    const l = entries();
+    for (let i = 0; i < l.length; i++) if (l[i].slug === slug) return l[i];
+    for (let j = 0; j < ROWS.length; j++) if (ROWS[j][0] === slug) return fedb(ROWS[j]);
+    return null;
   }
-  function photoUrls(exId) { const s = photoSlug(exId); return s ? ['lib/' + s + '/0.jpg', 'lib/' + s + '/1.jpg'] : null; }
 
   const STOP = { machine: 1, the: 1, a: 1, of: 1, and: 1, with: 1, plate: 1, loaded: 1, '(': 1 };
   function tokens(name) {
@@ -140,11 +122,31 @@
   // ระเบียนท่าใหม่ (ยังไม่เขียนลงฐานข้อมูล — ผู้เรียกเป็นคนเขียน)
   function toExercise(entry, nowIso, icon) {
     const e = { id: entry.id, name: entry.name, muscle: entry.muscle, equipment: entry.equipment, repMin: entry.repMin, repMax: entry.repMax, step: entry.step,
-      weightMode: entry.weightMode, icon: icon || '', subs: [], archived: false, isSample: false, createdAt: nowIso };
+      weightMode: entry.weightMode, icon: entry.artId ? ('art:' + entry.artId) : (icon || ''), subs: [], archived: false, isSample: false, createdAt: nowIso };
     return e;
   }
 
-  const api = { entries: entries, bySlug: bySlug, photoSlug: photoSlug, photoUrls: photoUrls, nameSimilar: nameSimilar, similar: similar, toExercise: toExercise, SRC: SRC, count: ROWS.length };
+  /* ภาพที่เดาจากชื่อ “ท่าใหม่” (ตอนสร้าง/เพิ่มด่วน เท่านั้น — ไม่แตะท่าที่มีอยู่แล้ว): ต้องมีภาพเดียวที่ตรงจริง ๆ
+   * ชื่อที่พิมพ์ต้องเป็นส่วนหนึ่งของชื่อภาพ และคำที่เหลือต้องเป็นคำกลาง ๆ (seated/standing/machine) ไม่ใช่ชนิดอุปกรณ์ → กำกวมแล้วไม่เดา */
+  const NEUTRAL = { seated: 1, standing: 1, machine: 1, '45': 1, degree: 1 };
+  function artFor(name) {
+    const art = A();
+    if (!art) return null;
+    const mine = tokens(name);
+    if (mine.length < 2) return null;
+    const cands = {};
+    function test(label, artId) {
+      const t = tokens(label), set = new Set(t);
+      if (!mine.every(function (m) { return set.has(m); })) return;
+      if (!t.every(function (x) { return mine.indexOf(x) >= 0 || NEUTRAL[x]; })) return;
+      cands[artId] = 1;
+    }
+    art.ROWS.forEach(function (r) { test(r[1], r[0]); });
+    const ids = Object.keys(cands);
+    return ids.length === 1 ? 'art:' + ids[0] : null;
+  }
+
+  const api = { entries: entries, bySlug: bySlug, artFor: artFor, nameSimilar: nameSimilar, similar: similar, toExercise: toExercise, SRC: SRC, count: ROWS.length };
   global.GymLibrary = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

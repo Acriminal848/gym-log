@@ -239,9 +239,15 @@
         createdAt: str(e.createdAt, 40) || null
       };
       // ฟิลด์เสริม (เวอร์ชัน 1.3+): ใส่เฉพาะเมื่อมีค่า เพื่อให้ข้อมูลเก่า export/import แล้วเหมือนเดิมทุกไบต์
-      if (typeof e.icon === 'string' && e.icon) exRec.icon = str(e.icon, 40);
+      if (typeof e.icon === 'string' && e.icon) exRec.icon = str(e.icon, 64);
       if (typeof e.note === 'string' && e.note) exRec.note = str(e.note, 300);
       if (Number.isInteger(e.restSec) && e.restSec >= 10 && e.restSec <= 900) exRec.restSec = e.restSec;   // เวลาพักเฉพาะท่า (1.4+)
+      if (Array.isArray(e.weights)) {                                                                   // รายการน้ำหนักที่เครื่องมี (2.1+): ใส่เมื่อมีอย่างน้อย 2 ค่าที่ถูกต้อง
+        const ws = [];
+        e.weights.forEach(function (v) { const x = Number(v); if (typeof v === 'number' && isFinite(x) && x > 0 && x <= 1000 && ws.indexOf(Math.round(x * 100) / 100) < 0 && ws.length < 80) ws.push(Math.round(x * 100) / 100); });
+        ws.sort(function (a, b) { return a - b; });
+        if (ws.length >= 2) exRec.weights = ws;
+      }
       exercises.push(exRec);
     });
 

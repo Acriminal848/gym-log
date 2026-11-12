@@ -267,6 +267,7 @@
     skip: '<path d="M6 6.5l7 5.5-7 5.5zM17 6v12"/>',
     settings: '<path d="M4.5 8h9.5M18.5 8h1M4.5 16h1M9.5 16h10"/><circle cx="16.2" cy="8" r="2.2"/><circle cx="7.3" cy="16" r="2.2"/>',
     timer: '<circle cx="12" cy="13.5" r="6.5"/><path d="M12 10.5v3.3l2 1.4M9.5 4.5h5"/>',
+    library: '<rect x="3.5" y="5" width="4.5" height="14" rx="1"/><rect x="9.5" y="5" width="4.5" height="14" rx="1"/><path d="m15.8 7.2 3.9-.9 2.2 11.4-3.9.9z" transform="translate(-1.4 0)"/>',
     keyboard: '<rect x="3.5" y="6.5" width="17" height="11" rx="2"/><path d="M7 10.5h.1M10 10.5h.1M13 10.5h.1M16 10.5h.1M8 14h8"/>'
   };
 
@@ -275,7 +276,13 @@
     return '<svg class="gi gi-ui' + (cls ? ' ' + cls : '') + '" viewBox="0 0 24 24" width="' + s + '" height="' + s + '" aria-hidden="true" focusable="false">' + (UI[name] || '') + '</svg>';
   }
 
-  const api = { ex: exSvg, ui: ui, EX_KEYS: EX_KEYS, EX_LABEL: EX_LABEL };
+  // 2.1: key แบบ art:<รหัส> = ภาพประกอบ SVG ในโฟลเดอร์ art/ (วาดเอง) แสดงเป็น <img> ตกแต่งอย่างเดียว (ชื่อท่าอยู่ข้าง ๆ เสมอ)
+  function exAny(key, size) {
+    const id = global.GymArt && global.GymArt.idOfKey(key);
+    if (id) { const s = size || 54; return '<img class="exart" src="' + global.GymArt.url(id) + '" width="' + s + '" height="' + s + '" alt="" decoding="async" draggable="false">'; }
+    return exSvg(key, size);
+  }
+  const api = { ex: exAny, ui: ui, EX_KEYS: EX_KEYS, EX_LABEL: EX_LABEL };
   global.GymIcons = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

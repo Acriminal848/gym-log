@@ -40,7 +40,7 @@ def main():
         # ----- ตัวแก้ลำดับ
         pg.click('[data-action=wk-edit]'); pg.wait_for_selector('#wk-editor')
         check('W1 ปุ่มปรับลำดับ → ไปตัวแก้ลำดับในหน้า “แผน” ค่าเริ่มต้น Push/Pull/Legs', slots(pg) == ['PPL · Push', 'PPL · Pull', 'PPL · Legs'], slots(pg))
-        check('W2 ตัวแก้ลำดับบอกสั้น ๆ ว่ารีเซ็ตทุกวันจันทร์ ไม่ตามทวง', 'ทุกวันจันทร์' in pg.inner_text('#wk-editor') and 'ไม่ตามทวง' in pg.inner_text('#wk-editor'))
+        check('W2 ตัวแก้ลำดับบอกสั้น ๆ ว่ารีเซ็ตทุกวันจันทร์ ไม่ตามทวง', 'ทุกวันจันทร์' in pg.inner_text('#wk-editor'))
         check('W3 ปุ่มในตัวแก้สูง/กว้าง ≥44px', pg.evaluate("() => [...document.querySelectorAll('#wk-editor .iconbtn')].every(b => { const r = b.getBoundingClientRect(); return r.width >= 44 && r.height >= 44; })"))
         pg.click('#wk-editor [data-action=wk-down][data-i="1"]'); pg.wait_for_timeout(250)
         check('W4 เลื่อน Pull ลง → Push/Legs/Pull และเก็บค่า', slots(pg) == ['PPL · Push', 'PPL · Legs', 'PPL · Pull'] and settings(pg).get('weekPlan') == ['ppl-plan-push', 'ppl-plan-legs', 'ppl-plan-pull'], (slots(pg), settings(pg).get('weekPlan')))

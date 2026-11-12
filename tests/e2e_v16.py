@@ -17,6 +17,11 @@ SEED = """async ({offset, id, planId, sets, bump}) => {
   return date;
 }"""
 
+def GL_help(pg):
+    pg.click('[data-action=help][data-k=sets]'); pg.wait_for_selector('.sheet .help-list')
+    t = pg.inner_text('.sheet'); pg.click('.sheet [data-action=close-sheet]'); pg.wait_for_timeout(150)
+    return t
+
 def seed(pg, offset, id, plan, sets=3, bump=0):
     return pg.evaluate(SEED, {'offset': offset, 'id': id, 'planId': plan, 'sets': sets, 'bump': bump})
 
@@ -44,7 +49,7 @@ def main():
         pg.reload(); pg.wait_for_selector('.today-card, .session-bar')
         hist(pg, 'overview')
         txt = pg.inner_text('#view')
-        check('P4 ภาพรวม: มีหัวสัปดาห์ + “เซตต่อกล้ามเนื้อ” + คำอธิบายว่านับเซตตรง', 'เซตต่อกล้ามเนื้อ' in txt and 'เซตตรง' in txt and 'สัปดาห์นี้' in txt)
+        check('P4 ภาพรวม: มีหัวสัปดาห์ + “เซตต่อกล้ามเนื้อ” + คำอธิบายว่านับเซตตรง', 'เซตต่อกล้ามเนื้อ' in txt and 'สัปดาห์นี้' in txt and pg.locator('[data-action=help][data-k=sets]').count() == 1)
         rows = pg.locator('.mb-row').count()
         check('P5 (1.9) แสดงเป็นหมวดใหญ่ ≥8 แถว + ส่วนย่อย (ไหล่ข้าง/ไหล่หลัง/ต้นขาหน้า/ต้นขาหลัง/อกบน/ปีกหลัง) ตามโปรแกรม', rows >= 8 and all(n in txt for n in ('ไหล่ข้าง', 'ไหล่หลัง', 'ต้นขาหน้า', 'ต้นขาหลัง', 'อกบน', 'ปีกหลัง')), rows)
         def row(name):
@@ -53,7 +58,7 @@ def main():
         push_sets_chest = pg.evaluate("""() => { const pl = GL.state.plans.find(p=>p.id==='ppl-plan-push'); return pl.items.filter(it => GL.exById(it.exerciseId).muscle==='อก').reduce((n,it)=>n+3,0); }""")
         check('P6 เซตต่อกล้ามเนื้อสัปดาห์นี้ถูก (อก = เซตของ Push สัปดาห์นี้ ล้วนเป็นเซตตรง)', ('%d เซต' % push_sets_chest) in row('อก'), row('อก'))
         check('P7 บอกจำนวนครั้งที่ฝึกต่อกล้ามเนื้อ (อก 1 ครั้ง)', '1 ครั้ง' in row('อก'), row('อก'))
-        check('P8 เส้นอ้างอิงปิดอยู่เป็นค่าเริ่มต้น (ไม่มีขีด/ไม่มีสีแดง)', pg.locator('.mb-mark').count() == 0 and 'เปิดเส้นอ้างอิง' in txt)
+        check('P8 เส้นอ้างอิงปิดอยู่เป็นค่าเริ่มต้น (ไม่มีขีด/ไม่มีสีแดง)', pg.locator('.mb-mark').count() == 0 and 'เปิดเส้นอ้างอิง' in GL_help(pg))
         check('P9 แถบกล้ามเนื้อมีตัวเลขกำกับและ aria-label (ไม่ใช้สี/ความยาวอย่างเดียว)', pg.evaluate("() => [...document.querySelectorAll('.mb-track')].every(t => (t.getAttribute('aria-label')||'').includes('เซต'))"))
         pg.click('[data-action=his-week][data-d="-1"]'); pg.wait_for_timeout(150)
         check('P10 ย้อนไปสัปดาห์ก่อน: หัวเปลี่ยน + ปุ่มสัปดาห์ถัดไปใช้ได้', '1 สัปดาห์ก่อน' in pg.inner_text('.ov-title') and not pg.locator('[data-action=his-week][data-d="1"]').is_disabled())
@@ -64,13 +69,13 @@ def main():
         check('P13 ตารางความสม่ำเสมอ: 7 แถว × 12 สัปดาห์ มีตัวเลขในช่อง และมีป้ายอ่านออกเสียงทุกช่อง', pg.locator('table.cg tbody tr').count() == 7 and pg.locator('table.cg tbody tr:first-child td').count() == 12 and pg.evaluate("() => [...document.querySelectorAll('table.cg td')].every(c => c.getAttribute('aria-label'))"))
         filled = pg.locator('table.cg td.on').count()
         check('P14 ช่องที่ฝึกมีตัวเลขจำนวนครั้ง (ตัวเลขไม่ใช่แค่สี) และจำนวนช่อง = จำนวนวันที่มี session', filled >= 6 and pg.evaluate("() => [...document.querySelectorAll('table.cg td.on')].every(c => /^[1-9]$/.test(c.textContent.trim()))"), filled)
-        check('P15 สรุปรวม/เฉลี่ยต่อสัปดาห์แสดง', 'เฉลี่ย' in pg.inner_text('.cg-card') and 'จาก 12 สัปดาห์' in pg.inner_text('.cg-card'))
+        check('P15 สรุปรวม/เฉลี่ยต่อสัปดาห์แสดง', 'ครั้ง' in pg.inner_text('.cg-card') and 'จาก 12 สัปดาห์' in pg.inner_text('.cg-card'))
         # ----- เส้นอ้างอิงเปิดในตั้งค่า
         go_home(pg); pg.click('[data-action=open-settings]'); pg.wait_for_selector('.rest-presets')
         pg.click('[data-action=set-toggle][data-key=showTargets]'); pg.wait_for_timeout(200)
         check('P16 ตั้งค่า: เปิดเส้นอ้างอิง → เก็บ showTargets=true', {r['key']: r['value'] for r in db(pg, 'settings')}.get('showTargets') is True)
         hist(pg, 'overview')
-        check('P17 เปิดเส้นอ้างอิง: มีขีด 10/20 ต่อกล้ามเนื้อ + ข้อความ “ไม่ใช่เป้า”', pg.locator('.mb-mark').count() >= 2 * 8 and 'ไม่ใช่เป้า' in pg.inner_text('.ov-card'))
+        check('P17 เปิดเส้นอ้างอิง: มีขีด 10/20 ต่อกล้ามเนื้อ + ข้อความ “ไม่ใช่เป้า”', pg.locator('.mb-mark').count() >= 2 * 8 and 'ไม่ใช่เป้า' in GL_help(pg))
         go_home(pg); pg.click('[data-action=open-settings]'); pg.wait_for_selector('.rest-presets')
         pg.click('[data-action=set-toggle][data-key=showTargets]'); pg.wait_for_timeout(150)
         # ----- รายท่า + กราฟ
@@ -87,7 +92,7 @@ def main():
         # ท่าที่เล่นน้อยกว่า 4 ครั้ง → การ์ดตัวเลข ไม่มีกราฟ
         pg.click('.back'); pg.wait_for_selector('[data-action=sum-open]')
         pg.click('[data-action=sum-open][data-ex=ppl-lat-pulldown]'); pg.wait_for_selector('.stat-row')
-        check('P24 เล่น <4 ครั้ง → ไม่มีกราฟ แต่มีการ์ดตัวเลข + บอกเงื่อนไขกราฟ', pg.locator('svg.chart').count() == 0 and 'ครบ 4 ครั้ง' in pg.inner_text('#view'))
+        check('P24 เล่น <4 ครั้ง → ไม่มีกราฟ แต่มีการ์ดตัวเลข + บอกเงื่อนไขกราฟ', pg.locator('svg.chart').count() == 0 and pg.locator('.trend-dots[aria-label*="ครบ 4 ครั้ง"]').count() >= 1 and 'จะขึ้นเมื่อ' not in pg.inner_text('#view'))
         # ----- รายครั้ง
         hist(pg, 'sessions')
         check('P25 รายครั้ง: รายการ session ที่จบแล้ว (8)', pg.locator('[data-action=open-detail]').count() == 8, pg.locator('[data-action=open-detail]').count())

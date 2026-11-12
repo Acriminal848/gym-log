@@ -106,8 +106,8 @@ def main():
         check('M8 ข้อมูลท่าเดิมไม่ถูกแก้ (Pec Deck ยังเป็น muscle = อก ในฐานข้อมูล)', pecs['muscle'] == 'อก')
         hist(pg, 'overview')
         ov = pg.inner_text('.ov-card')
-        check('M9 ภาพรวมรายสัปดาห์: หมวดใหญ่ “อก” แยกส่วนย่อย อกบน/อกกลาง และบอกว่า “อกล่าง ยังไม่ได้เล่น”', all(n in ov for n in ('อกบน', 'อกกลาง', 'อกล่าง')) and pg.locator('.mb-subs li.none', has_text='อกล่าง').count() == 1 and 'ยังไม่ได้เล่น' in pg.inner_text('.mb-subs li.none'), ov[:400])
-        check('M10 ส่วนย่อยแต่ละแถวมีตัวเลข/ข้อความสถานะ (ไม่ใช้สีหรือความยาวแท่งอย่างเดียว)', pg.evaluate("() => [...document.querySelectorAll('.mb-subs li')].every(li => /เซต|ยังไม่ได้เล่น/.test(li.textContent))"))
+        check('M9 ภาพรวมรายสัปดาห์: หมวดใหญ่ “อก” แยกส่วนที่เล่นแล้ว (อกบน/อกกลาง) และรวมส่วนที่ยังไม่ได้เล่นไว้บรรทัดเดียว (อกล่าง)', all(n in ov for n in ('อกบน', 'อกกลาง', 'อกล่าง')) and 'ยังไม่ได้เล่น: ' in ov and 'อกล่าง' in pg.inner_text('.mb-idle') and 'อกบน' not in pg.inner_text('.mb-idle'), ov[:400])
+        check('M10 ส่วนย่อยแต่ละแถวมีตัวเลข/ข้อความสถานะ (ไม่ใช้สีหรือความยาวแท่งอย่างเดียว)', pg.evaluate("() => [...document.querySelectorAll('.mb-subs li')].every(li => /เซต/.test(li.textContent))"))
         errs = [e for e in pg.errors if 'favicon' not in e]
         check('Z3 ไม่มี error ใน console (ข้อ 4)', not errs, errs)
         b.close()

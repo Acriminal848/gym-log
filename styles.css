@@ -167,7 +167,7 @@ p { margin: 6px 0; }
 
 /* ---------- หัวหน้า ---------- */
 .topbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 48px; margin-bottom: 4px; }
-.topbar .back {
+.topbar .back, .sheet-back {
   display: inline-flex; align-items: center; gap: 2px; min-height: 44px; padding: 0 10px 0 4px;
   background: none; border: 0; font-weight: 600; color: var(--text);
 }
@@ -711,3 +711,41 @@ svg.chart { user-select: none; -webkit-user-select: none; touch-action: pan-y; -
 .sub-fl { margin-top: 10px; }
 .sub-fl .muted { font-weight: 400; }
 .chip.sub { min-height: 40px; padding: 6px 14px; font-size: 14px; }
+
+/* ---------- 2.0 คลังท่า / รูปท่า ---------- */
+.pt-actions { display: flex; gap: 8px; }
+.pt-actions .btn { white-space: nowrap; }
+.cta-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 8px 0 4px; }
+.cta-pair .create-cta { margin: 0; white-space: nowrap; min-width: 0; padding-left: 8px; padding-right: 8px; }
+.sheet-back { margin: -2px 0 6px; }
+@media (max-width: 350px) { .pt-actions .btn svg { display: none; } .cta-pair .btn svg { display: none; } }
+
+/* ===== 2.1 ===== */
+.pred { margin: 4px 2px 0; min-height: 20px; text-align: center; }
+.sh-sep { border: 0; border-top: 1px solid var(--line); margin: 16px 0 12px; }
+
+.exart { width: 100%; height: 100%; display: block; border-radius: inherit; object-fit: contain; }
+.tile { overflow: hidden; }
+.tile-art { padding: 0; cursor: pointer; border: 1px solid var(--line-strong); }
+.tile-art:active { background: var(--accent-soft); }
+.art-big { display: flex; justify-content: center; margin: 10px 0 4px; }
+.art-big .exart { width: min(100%, 260px); height: auto; aspect-ratio: 1; border-radius: 20px; background: #fff; }
+.art-leg { text-align: center; margin: 4px 0 12px; }
+.art-btn { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 56px; padding: 6px 12px; text-align: left; background: var(--surface); border: 1px solid var(--line-strong); border-radius: 14px; font: inherit; color: var(--text); }
+.art-btn span { flex: 1; font-weight: 600; }
+.art-btn .exart { width: 44px; height: 44px; border-radius: 10px; flex: none; }
+.art-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 6px 0 10px; }
+.art-opt { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px 4px 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; font: inherit; font-size: 12px; line-height: 1.25; color: var(--text); text-align: center; min-height: 44px; }
+.art-opt .exart { width: 64px; height: 64px; border-radius: 10px; }
+.art-opt.on { border: 2.5px solid var(--accent-edge); background: var(--accent-soft); font-weight: 700; }
+.h-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.h-row h3 { margin: 0; }
+.mb-row.zero .mb-name, .mb-row.zero .mb-num { color: var(--text2); }
+.mb-idle { margin: 4px 0 0 12px; font-size: 13px; color: var(--text2); }
+.trend-help { display: flex; justify-content: flex-end; margin: -4px 0 0; }
+.trend-dots { display: flex; align-items: center; gap: 8px; margin: 10px 0 4px; color: var(--text2); font-size: 14px; }
+.trend-dots i { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--line-strong); background: transparent; }
+.trend-dots i.on { background: var(--ink1); border-color: var(--ink1); }
+.help-list { margin: 8px 0 14px; padding-left: 20px; display: grid; gap: 8px; font-size: 15px; line-height: 1.5; }
+.mb-row.zero .mb-track { display: none; }
+.mb-row.zero { margin-bottom: 2px; }

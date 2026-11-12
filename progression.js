@@ -85,12 +85,63 @@
 
   function repsText(sets) { return sets.map(function (s) { return s.reps; }).join('/'); }
 
+  /* ---------- 2.1: ประมาณ 1RM / คาด reps / รายการน้ำหนักของเครื่อง / เซตที่ไล่น้ำหนัก ---------- */
+  const EST_MAX_REPS = 12;                          // เกินนี้สูตรประมาณ 1RM คลาดมาก → ไม่ใช้เซตนั้นประมาณ
+  // Epley: 1RM = w × (1 + reps/30) ใช้ได้ดีที่ 1–12 reps; เกิน 12 หรือ reps < 1 → null (ไม่ประมาณ)
+  function e1rm(w, r) {
+    if (!(w > 0) || !(r >= 1) || r > EST_MAX_REPS) return null;
+    return round2(w * (1 + r / 30));
+  }
+  // กลับสูตร: คาดว่าที่น้ำหนัก w ทำได้กี่ reps (ปัดลง) — ใช้ตรวจว่าน้ำหนักถัดไปของเครื่อง "ไหวไหม"
+  function repsAt(est, w) {
+    if (!(est > 0) || !(w > 0)) return null;
+    return Math.max(0, Math.floor(30 * (est / w - 1) + 1e-9));
+  }
+  function bestE1(sets) {
+    let best = null;
+    (sets || []).forEach(function (x) { const v = e1rm(x.weight, x.reps); if (v !== null && (best === null || v > best)) best = v; });
+    return best;
+  }
+  // รายการน้ำหนักที่เครื่องมี (ex.weights) → เลขเรียงจากน้อยไปมาก ไม่ซ้ำ; ไม่ถึง 2 ค่า = ไม่ใช้
+  function cleanWeights(list) {
+    if (!Array.isArray(list)) return [];
+    const out = [];
+    list.forEach(function (v) { const n = Number(v); if (isFinite(n) && n > 0 && n <= 1000 && !out.some(function (o) { return sameWeight(o, n); })) out.push(round2(n)); });
+    out.sort(function (a, b) { return a - b; });
+    return out.length >= 2 ? out : [];
+  }
+  // น้ำหนักถัดไป/ก่อนหน้าบนรายการ (dir = 1 / -1); cur ไม่อยู่บนรายการก็ไปยังค่าที่ใกล้ที่สุดด้านนั้น; ไม่มีรายการ → null
+  function stepOnList(list, cur, dir) {
+    const L = cleanWeights(list);
+    if (!L.length) return null;
+    if (dir > 0) { for (let i = 0; i < L.length; i++) if (L[i] > cur + 0.001) return L[i]; return L[L.length - 1] > cur + 0.001 ? L[L.length - 1] : null; }
+    for (let i = L.length - 1; i >= 0; i--) if (L[i] < cur - 0.001) return L[i];
+    return null;
+  }
+  /* เซตที่ “ไล่น้ำหนัก” = ทุกเซตหนักขึ้นกว่าเซตก่อน (น้ำหนักไม่ซ้ำ อย่างน้อย 2 เซต) = กำลังหาน้ำหนักที่ไหว
+   * ไม่ใช่เซตแรกหนักเกินแล้วต้องลด → น้ำหนักทำงานคือ “เซตที่หนักสุดที่ยังทำได้ถึงขั้นต่ำของช่วง reps” */
+  function isRamp(sets) {
+    if (!sets || sets.length < 2) return false;
+    for (let i = 1; i < sets.length; i++) if (!(sets[i].weight > sets[i - 1].weight + 0.001)) return false;   // ทุกเซตหนักขึ้นกว่าเซตก่อน (น้ำหนักซ้ำ = ไม่ใช่การไล่หา)
+    return true;
+  }
+  function rampBase(sets, repMin) {
+    if (!isRamp(sets)) return null;
+    let best = null;
+    sets.forEach(function (x) { if (x.reps >= repMin && (best === null || x.weight > best.weight + 0.001)) best = x; });
+    if (!best) return null;
+    const at = sets.filter(function (x) { return sameWeight(x.weight, best.weight); });
+    return { w: best.weight, minReps: Math.min.apply(null, at.map(function (x) { return x.reps; })) };
+  }
+
   /* เป้าหมายวันนี้ (ค่าที่เสนอ — ยังไม่นับเป็นผลงาน)
    *   workouts: ประวัติทั้งหมด, entry: ท่าที่กำลังจะเล่น (exerciseId/equipment/weightMode/plannedSets)
    *   ex: { repMin, repMax, step } ของท่า
    * คืน null ถ้าไม่เคยเล่นท่านี้ (ให้ผู้ใช้กรอกน้ำหนักเริ่มต้นเอง)
    * คืน { weight, reps, kind, reason, basedOn } โดย weight = null เมื่อไม่มีตัวเลขที่เชื่อถือได้ */
-  function suggestTarget(workouts, entry, ex, excludeWorkoutId) {
+  let lastCtx = null;
+  function suggestCore(workouts, entry, ex, excludeWorkoutId) {
+    lastCtx = null;
     const repMin = ex && ex.repMin > 0 ? ex.repMin : 8;
     const repMax = ex && ex.repMax >= repMin ? ex.repMax : Math.max(12, repMin);
     const step = ex && ex.step > 0 ? ex.step : 2.5;
@@ -116,8 +167,9 @@
     /* ----- น้ำหนักผสมหลายค่า (1.7): ตัดสินจาก "เซตที่อ่อนสุด" ไม่ใช่เซตที่หนักสุด -----
      * เซตแรกหนักแล้วเซตหลังต้องลดน้ำหนักไม่ถือเป็นความก้าวหน้า — ใช้น้ำหนักต่ำสุดที่ทำได้ตลอด
      * เป็นน้ำหนักทำงาน แล้วให้กติกา double progression ทำงานต่อจากนั้นตามปกติ */
-    const mixed = distinct.length > 1;
-    const W = Math.min.apply(null, distinct);
+    const rb = distinct.length > 1 ? rampBase(sets, repMin) : null;   // 2.1: ไล่น้ำหนัก → ใช้เซตหนักสุดที่ยังไหว
+    const mixed = distinct.length > 1 && !rb;
+    const W = rb ? rb.w : Math.min.apply(null, distinct);
     const atW = sets.filter(function (x) { return sameWeight(x.weight, W); });
     const reps = atW.map(function (x) { return x.reps; });
     const minReps = Math.min.apply(null, reps);
@@ -127,6 +179,7 @@
     const wTxt = distinct.slice().sort(function (a, b) { return b - a; }).map(fmt).join(' / ');
     const mixTail = ' เซตแรกควรหยุดก่อนสุดแรงราว 1–2 reps เพื่อให้เซตหลังไม่ตก';
     const missedMin = minReps < repMin;
+    lastCtx = { W: W, minReps: minReps, sets: sets, repMin: repMin, repMax: repMax, step: step, ramp: !!rb, wTxt: wTxt };
 
     if (allAtCeiling) {
       /* 1.9: น้ำหนักผสม — เซตที่น้ำหนักทำงาน (เซตอ่อนสุด) ถึงเพดานแค่ “บางเซต” (เช่น 12 kg ทำได้แค่เซตแรก 15 reps แล้วเซตอื่นไปหนัก 18 kg)
@@ -192,6 +245,52 @@
     };
   }
 
+  /* ครอบ suggestCore: (1) ไล่น้ำหนัก → ข้อความ/ป้ายของมันเอง (2) ปัดน้ำหนักให้ตรงกับรายการน้ำหนักที่เครื่องมี (ex.weights)
+   * โดยคาด reps ที่น้ำหนักนั้นจาก 1RM ประมาณของครั้งก่อน: ถ้าน้ำหนักถัดไปของเครื่องหนักเกินไป (คาด reps ต่ำกว่าช่วงเกิน 2) → อยู่ที่น้ำหนักเดิมแล้วเพิ่ม reps */
+  function suggestTarget(workouts, entry, ex, excludeWorkoutId) {
+    const t = suggestCore(workouts, entry, ex, excludeWorkoutId);
+    const c = lastCtx; lastCtx = null;
+    if (!t || t.weight == null || !c) return t;
+    if (c.ramp) {
+      if (t.kind === 'add_weight') t.reason = 'ครั้งก่อนไล่น้ำหนัก ' + c.wTxt + ' kg · ที่ ' + fmt(c.W) + ' kg ทำได้ ' + c.minReps + ' reps ถึงเพดานแล้ว จึงเสนอเพิ่มน้ำหนัก';
+      else { t.kind = 'ramp'; t.reason = 'ครั้งก่อนไล่น้ำหนัก ' + c.wTxt + ' kg เพื่อหาน้ำหนักที่ไหว — ใช้เซตที่หนักสุดที่ยังได้ ≥ ' + c.repMin + ' reps คือ ' + fmt(c.W) + ' kg × ' + c.minReps + ' แล้วเสนอ ' + fmt(t.weight) + ' kg × ' + t.reps; }
+    }
+    const L = cleanWeights(ex && ex.weights);
+    const onList = L.some(function (x) { return sameWeight(x, t.weight); });
+    const ideal = t.weight;
+    const upward = ideal > c.W + 0.001;
+    const est = upward ? bestE1(c.sets) : null;
+    // 2.1: ขึ้นน้ำหนักได้ก็ต่อเมื่อคาดว่ายังทำได้ถึงราวต่ำสุดของช่วง reps (กระโดด 18 → 24 ทำได้ราว 1 rep ไม่ใช่ 8)
+    //      ใช้ทุกกรณี: ไม่ว่าจะมีรายการน้ำหนักของเครื่องหรือไม่ — ถ้าไม่ไหวก็อยู่น้ำหนักเดิมแล้วเพิ่ม reps ก่อน
+    function stay(base, hiW, pr) {
+      t.weight = base; t.kind = 'add_reps'; t.reps = Math.max(c.minReps + 1, c.repMin);
+      t.reason = 'ขั้นถัดไป ' + fmt(hiW) + ' kg คาดทำได้แค่ราว ' + pr + ' reps (ต่ำกว่าช่วง ' + c.repMin + '–' + c.repMax + ') จึงอยู่ที่ ' + fmt(base) + ' kg แล้วเพิ่ม reps ก่อน — ถ้าอยากลอง ' + fmt(hiW) + ' kg ก็เล่นได้เลย';
+      return t;
+    }
+    if (!L.length || onList) {
+      if (!upward || entry.weightMode === 'bodyweight' || !est || (t.kind !== 'add_weight' && t.kind !== 'ramp')) return t;
+      const pr0 = repsAt(est, ideal);
+      if (pr0 === null || pr0 >= c.repMin - 2) return t;
+      let base = c.W;
+      L.forEach(function (x) { if (x > c.W + 0.001 && x < ideal - 0.001) base = x; });   // น้ำหนักระหว่างทางที่เครื่องมี
+      return stay(base, ideal, pr0);
+    }
+    let lo = null, hi = null;
+    L.forEach(function (x) { if (x < t.weight - 0.001) lo = x; if (hi === null && x > t.weight + 0.001) hi = x; });
+    if (upward && hi !== null) {
+      const pr = est ? repsAt(est, hi) : null;
+      if (pr === null || pr >= c.repMin - 2) {
+        t.weight = hi; t.reps = pr === null ? t.reps : Math.max(1, Math.min(c.repMax, pr));
+        t.reason += ' · เครื่องไม่มี ' + fmt(ideal) + ' kg จึงใช้ ' + fmt(hi) + ' kg' + (pr === null ? '' : ' (คาดทำได้ราว ' + pr + ' reps)');
+        return t;
+      }
+      return stay(lo !== null ? lo : c.W, hi, pr);
+    }
+    const pick = lo !== null && (hi === null || ideal - lo <= hi - ideal) ? lo : (hi !== null ? hi : lo);
+    if (pick !== null) { t.reason += ' · ปัดเป็น ' + fmt(pick) + ' kg ตามที่เครื่องมี'; t.weight = pick; }
+    return t;
+  }
+
   /* ---------- 1.7: วิเคราะห์รูปแบบเซตใน session เดียว (ไม่แตะข้อมูล) ----------
    * ใช้แสดงคำเตือนระหว่างจด และคำแนะนำตอนดูครั้งก่อน เป็นคำแนะนำเท่านั้น ผู้ใช้เลือกเอง
    * - heavyFirst: เซตหลังเบากว่าเซตแรกตั้งแต่ HEAVY_DROP (10%) ขึ้นไป
@@ -231,7 +330,12 @@
 
   /* เซตที่อ่อนสุด (1.9): น้ำหนักต่ำสุด + reps "ที่น้ำหนักนั้น" เท่านั้น
    * (เซตที่หนักกว่าแล้ว reps ตก เช่น 18 kg × 8 ไม่ลาก reps ต่ำสุดของน้ำหนักทำงานลงมา) */
-  function weakest(sets) {
+  function weakest(sets, repMin) {
+    const rb = repMin > 0 ? rampBase(sets, repMin) : null;      // 2.1: ไล่น้ำหนัก → น้ำหนักทำงานคือเซตที่หนักสุดที่ยังไหว
+    if (rb) {
+      const atR = sets.filter(function (x) { return sameWeight(x.weight, rb.w); });
+      return { wMin: rb.w, rMin: rb.minReps, rSum: atR.reduce(function (n, x) { return n + x.reps; }, 0) };
+    }
     const wMin = Math.min.apply(null, sets.map(function (x) { return x.weight; }));
     const at = sets.filter(function (x) { return sameWeight(x.weight, wMin); });
     return {
@@ -243,8 +347,8 @@
 
   /* ความก้าวหน้า session ใหม่เทียบ session ก่อนหน้า ตัดสินจาก "เซตที่อ่อนสุด":
    * น้ำหนักต่ำสุดสูงขึ้น = ก้าวหน้า, ต่ำลง = ไม่; เท่ากัน → reps ต่ำสุด (ที่น้ำหนักนั้น) สูงขึ้น หรือเท่ากันแต่ reps รวมมากขึ้น */
-  function progressed(a, b) {
-    const A = weakest(a), B = weakest(b);
+  function progressed(a, b, repMin) {
+    const A = weakest(a, repMin), B = weakest(b, repMin);
     if (A.wMin > B.wMin + 0.001) return true;
     if (A.wMin < B.wMin - 0.001) return false;
     if (A.rMin !== B.rMin) return A.rMin > B.rMin;
@@ -264,13 +368,14 @@
       const lim = function (a) { return a.map(function (x) { return { weight: x.weight, reps: Math.min(x.reps, cap) }; }); };
       cur = lim(cur); prev = lim(prev);
     }
-    const C = weakest(cur), Pv = weakest(prev);
+    const rMn = ex && ex.repMin > 0 ? ex.repMin : 0;
+    const C = weakest(cur, rMn), Pv = weakest(prev, rMn);
     let onTarget = false;
     if (target && target.weight != null && target.reps != null) {
       onTarget = cur.every(function (x) { return x.weight >= target.weight - 0.001 && x.reps >= target.reps; });
     }
     let st = 'same', detail = '';
-    if (progressed(cur, prev)) {
+    if (progressed(cur, prev, rMn)) {
       st = 'up';
       detail = C.wMin > Pv.wMin + 0.001
         ? 'น้ำหนักทำงาน ' + fmt(Pv.wMin) + ' → ' + fmt(C.wMin) + ' kg'
@@ -353,6 +458,8 @@
     weakest: weakest,
     verdict: verdict,
     inferStep: inferStep,
+    e1rm: e1rm, repsAt: repsAt, bestE1: bestE1, cleanWeights: cleanWeights, stepOnList: stepOnList, isRamp: isRamp, rampBase: rampBase,
+    EST_MAX_REPS: EST_MAX_REPS,
     weightsOf: weightsOf,
     stallStatus: stallStatus,
     TIP: TIP
